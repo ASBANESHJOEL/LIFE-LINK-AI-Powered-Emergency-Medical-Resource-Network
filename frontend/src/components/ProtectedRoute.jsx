@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
  * 3. Role-based authorization matching allowedRoles
  */
 export function ProtectedRoute({ children, allowedRoles }) {
-  const { session, user, role, profileStatus, loading } = useAuth();
+  const { session, user, role, profileStatus, authError, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -36,6 +36,26 @@ export function ProtectedRoute({ children, allowedRoles }) {
   // 3. Authenticated, but user.is_active is false
   if (profileStatus === 'INACTIVE') {
     return <Navigate to="/inactive" replace />;
+  }
+
+  // 4. API / Configuration Error (surfaced instead of treating as unprovisioned)
+  if (profileStatus === 'ERROR') {
+    return (
+      <div className="center-content" style={{ minHeight: '60vh' }}>
+        <div className="glass-panel" style={{ maxWidth: '460px', padding: '32px', textAlign: 'center' }}>
+          <h2 style={{ color: '#ef4444', marginBottom: '12px' }}>Authentication Error</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '20px', fontSize: '0.95rem' }}>
+            {authError || 'Failed to verify account authorization with the LIFE-LINK backend service.'}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => window.location.reload()}
+          >
+            Retry Verification
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // 4. Role Authorization Guard

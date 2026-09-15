@@ -10,6 +10,7 @@ export function AuthProvider({ children }) {
   const [role, setRole] = useState(null);
   const [organization, setOrganization] = useState(null);
   const [profileStatus, setProfileStatus] = useState('LOADING'); // 'LOADING' | 'ACTIVE' | 'UNPROVISIONED' | 'INACTIVE' | 'ERROR' | 'UNAUTHENTICATED'
+  const [authError, setAuthError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Fetch trusted profile and role from the backend using the authenticated session token
@@ -19,6 +20,7 @@ export function AuthProvider({ children }) {
       setRole(null);
       setOrganization(null);
       setProfileStatus('UNAUTHENTICATED');
+      setAuthError(null);
       setLoading(false);
       return;
     }
@@ -32,71 +34,78 @@ export function AuthProvider({ children }) {
         }
       });
 
+      // Verify response content-type before attempting JSON parsing
+      const contentType = response.headers.get('content-type') || '';
+      const isJson = contentType.toLowerCase().includes('application/json');
+
+      if (!isJson) {
+        console.error(
+          `[LIFE-LINK] API configuration error: /api/auth/me returned non-JSON content-type: "${contentType}" (HTTP ${response.status})`
+        );
+        setUserProfile(null);
+        setRole(null);
+        setOrganization(null);
+        setProfileStatus('ERROR');
+        setAuthError(
+          `Authentication service configuration error: Expected JSON from API, but received ${contentType || 'non-JSON response'}. Check API routing.`
+        );
+        return;
+      }
+
       if (response.ok) {
         const data = await response.json();
-        setUserProfile(data.user);
-        setRole(data.user.role);
-        setOrganization(data.organization || null);
-        setProfileStatus('ACTIVE');
+        if (data?.user) {
+          setUserProfile(data.user);
+          setRole(data.user.role);
+          setOrganization(data.organization || null);
+          setProfileStatus('ACTIVE');
+          setAuthError(null);
+        } else {
+          setUserProfile(null);
+          setRole(null);
+          setOrganization(null);
+          setProfileStatus('ERROR');
+          setAuthError('Authentication server returned an invalid profile structure.');
+        }
       } else if (response.status === 403) {
         const errData = await response.json().catch(() => ({}));
+        setUserProfile(null);
+        setRole(null);
+        setOrganization(null);
         if (errData.error === 'ACCOUNT_NOT_PROVISIONED') {
-          setUserProfile(null);
-          setRole(null);
-          setOrganization(null);
           setProfileStatus('UNPROVISIONED');
+          setAuthError('Your account has not been provisioned in the LIFE-LINK registry.');
         } else if (errData.error === 'ACCOUNT_INACTIVE') {
-          setUserProfile(null);
-          setRole(null);
-          setOrganization(null);
           setProfileStatus('INACTIVE');
+          setAuthError('Your LIFE-LINK account has been deactivated.');
         } else {
           setProfileStatus('ERROR');
+          setAuthError(errData.message || 'Access forbidden.');
         }
       } else if (response.status === 401) {
         // Session invalid on backend
         await supabase.auth.signOut();
+        setUserProfile(null);
+        setRole(null);
+        setOrganization(null);
         setProfileStatus('UNAUTHENTICATED');
+        setAuthError('Session expired. Please sign in again.');
       } else {
-        // Fallback: If backend is offline, try direct query (subject to database RLS)
-        const { data: dbUser, error: dbError } = await supabase
-          .from('users')
-          .select('id, email, phone, role, is_active, is_synthetic')
-          .eq('id', currentSession.user.id)
-          .maybeSingle();
-
-        if (dbError || !dbUser) {
-          setProfileStatus('UNPROVISIONED');
-        } else if (dbUser.is_active === false) {
-          setProfileStatus('INACTIVE');
-        } else {
-          setUserProfile(dbUser);
-          setRole(dbUser.role);
-          setProfileStatus('ACTIVE');
-        }
+        const errData = await response.json().catch(() => ({}));
+        console.error(`[LIFE-LINK] Auth endpoint error: HTTP ${response.status}`, errData);
+        setUserProfile(null);
+        setRole(null);
+        setOrganization(null);
+        setProfileStatus('ERROR');
+        setAuthError(errData.message || `Authentication service error (HTTP ${response.status}).`);
       }
     } catch (err) {
-      console.error('[LIFE-LINK] Failed to fetch application user profile:', err);
-      // Direct query fallback
-      try {
-        const { data: dbUser } = await supabase
-          .from('users')
-          .select('id, email, phone, role, is_active, is_synthetic')
-          .eq('id', currentSession.user.id)
-          .maybeSingle();
-
-        if (dbUser && dbUser.is_active !== false) {
-          setUserProfile(dbUser);
-          setRole(dbUser.role);
-          setProfileStatus('ACTIVE');
-        } else if (dbUser && dbUser.is_active === false) {
-          setProfileStatus('INACTIVE');
-        } else {
-          setProfileStatus('UNPROVISIONED');
-        }
-      } catch {
-        setProfileStatus('ERROR');
-      }
+      console.error('[LIFE-LINK] Network or configuration failure connecting to /api/auth/me:', err);
+      setUserProfile(null);
+      setRole(null);
+      setOrganization(null);
+      setProfileStatus('ERROR');
+      setAuthError('Unable to connect to the authentication service. Please check your network or server configuration.');
     } finally {
       setLoading(false);
     }
@@ -198,6 +207,7 @@ export function AuthProvider({ children }) {
     setRole(null);
     setOrganization(null);
     setProfileStatus('UNAUTHENTICATED');
+    setAuthError(null);
     setLoading(false);
   };
 
@@ -208,6 +218,7 @@ export function AuthProvider({ children }) {
     role,
     organization,
     profileStatus,
+    authError,
     loading,
     signInWithOtp,
     verifyOtp,

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Mail, ShieldCheck, ArrowRight, RotateCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function LoginPage() {
-  const { signInWithOtp, verifyOtp, user, role, profileStatus } = useAuth();
+  const { signInWithOtp, verifyOtp, user, role, profileStatus, authError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -76,8 +76,8 @@ export function LoginPage() {
     setMessage('');
 
     const trimmedOtp = otp.trim();
-    if (!trimmedOtp || trimmedOtp.length < 6) {
-      setError('Please enter the 6-digit verification code.');
+    if (!trimmedOtp || trimmedOtp.length !== 8) {
+      setError('Please enter the 8-digit verification code.');
       return;
     }
 
@@ -136,10 +136,10 @@ export function LoginPage() {
         </div>
 
         {/* Feedback Alerts */}
-        {error && (
+        {(error || (profileStatus === 'ERROR' && authError)) && (
           <div className="alert alert-error">
             <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div>{error}</div>
+            <div>{error || authError}</div>
           </div>
         )}
 
@@ -205,7 +205,7 @@ export function LoginPage() {
           <form onSubmit={handleVerifyOtp}>
             <div className="form-group" style={{ textAlign: 'center' }}>
               <label htmlFor="otp" className="form-label">
-                Enter 6-Digit Verification Code
+                Verification Code
               </label>
               <input
                 id="otp"
@@ -217,8 +217,8 @@ export function LoginPage() {
                   letterSpacing: '0.3em',
                   fontWeight: '700'
                 }}
-                maxLength={6}
-                placeholder="••••••"
+                maxLength={8}
+                placeholder="••••••••"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                 disabled={loading}
@@ -231,7 +231,7 @@ export function LoginPage() {
               type="submit"
               className="btn btn-primary"
               style={{ width: '100%', marginTop: '8px' }}
-              disabled={loading || otp.length < 6}
+              disabled={loading || otp.trim().length !== 8}
             >
               {loading ? (
                 <>
