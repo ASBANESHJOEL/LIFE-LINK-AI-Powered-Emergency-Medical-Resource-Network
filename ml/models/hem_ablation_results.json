@@ -1,0 +1,293 @@
+{
+  "ablation_date": "2026-09-15T13:49:15.452936",
+  "experiments": [
+    {
+      "name": "Exp 1: Baseline (weights=1.0)",
+      "key": "baseline",
+      "train_metrics": {
+        "accuracy": 0.8572,
+        "precision": 0.856,
+        "recall": 0.9688,
+        "f1": 0.909,
+        "roc_auc": 0.9206,
+        "confusion_matrix": [
+          [
+            359,
+            298
+          ],
+          [
+            57,
+            1772
+          ]
+        ]
+      },
+      "val_metrics": {
+        "accuracy": 0.732,
+        "precision": 0.7856,
+        "recall": 0.8799,
+        "f1": 0.8301,
+        "roc_auc": 0.6975,
+        "confusion_matrix": [
+          [
+            45,
+            104
+          ],
+          [
+            52,
+            381
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7288,
+        "precision": 0.7654,
+        "recall": 0.8903,
+        "f1": 0.8231,
+        "roc_auc": 0.7237,
+        "confusion_matrix": [
+          [
+            54,
+            107
+          ],
+          [
+            43,
+            349
+          ]
+        ]
+      },
+      "train_test_acc_gap": 12.84,
+      "train_test_f1_gap": 8.59
+    },
+    {
+      "name": "Exp 2: Mild HEM (hard=1.25, very_hard=1.5)",
+      "key": "mild_hem",
+      "train_metrics": {
+        "accuracy": 0.8934,
+        "precision": 0.8845,
+        "recall": 0.9836,
+        "f1": 0.9314,
+        "roc_auc": 0.9335,
+        "confusion_matrix": [
+          [
+            422,
+            235
+          ],
+          [
+            30,
+            1799
+          ]
+        ]
+      },
+      "val_metrics": {
+        "accuracy": 0.732,
+        "precision": 0.7891,
+        "recall": 0.873,
+        "f1": 0.8289,
+        "roc_auc": 0.695,
+        "confusion_matrix": [
+          [
+            48,
+            101
+          ],
+          [
+            55,
+            378
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7197,
+        "precision": 0.7639,
+        "recall": 0.875,
+        "f1": 0.8157,
+        "roc_auc": 0.7226,
+        "confusion_matrix": [
+          [
+            55,
+            106
+          ],
+          [
+            49,
+            343
+          ]
+        ]
+      },
+      "train_test_acc_gap": 17.37,
+      "train_test_f1_gap": 11.57
+    },
+    {
+      "name": "Exp 3: Moderate HEM (hard=1.5, very_hard=2.0)",
+      "key": "moderate_hem",
+      "train_metrics": {
+        "accuracy": 0.9151,
+        "precision": 0.9078,
+        "recall": 0.9847,
+        "f1": 0.9447,
+        "roc_auc": 0.9407,
+        "confusion_matrix": [
+          [
+            474,
+            183
+          ],
+          [
+            28,
+            1801
+          ]
+        ]
+      },
+      "val_metrics": {
+        "accuracy": 0.7251,
+        "precision": 0.791,
+        "recall": 0.8568,
+        "f1": 0.8226,
+        "roc_auc": 0.6929,
+        "confusion_matrix": [
+          [
+            51,
+            98
+          ],
+          [
+            62,
+            371
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7233,
+        "precision": 0.7685,
+        "recall": 0.8724,
+        "f1": 0.8172,
+        "roc_auc": 0.7133,
+        "confusion_matrix": [
+          [
+            58,
+            103
+          ],
+          [
+            50,
+            342
+          ]
+        ]
+      },
+      "train_test_acc_gap": 19.18,
+      "train_test_f1_gap": 12.75
+    },
+    {
+      "name": "Exp 4: Aggressive HEM (hard=2.0, very_hard=3.0)",
+      "key": "aggressive_hem",
+      "train_metrics": {
+        "accuracy": 0.9155,
+        "precision": 0.9166,
+        "recall": 0.9738,
+        "f1": 0.9443,
+        "roc_auc": 0.9488,
+        "confusion_matrix": [
+          [
+            495,
+            162
+          ],
+          [
+            48,
+            1781
+          ]
+        ]
+      },
+      "val_metrics": {
+        "accuracy": 0.701,
+        "precision": 0.7773,
+        "recall": 0.8383,
+        "f1": 0.8067,
+        "roc_auc": 0.6768,
+        "confusion_matrix": [
+          [
+            45,
+            104
+          ],
+          [
+            70,
+            363
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.698,
+        "precision": 0.7635,
+        "recall": 0.8316,
+        "f1": 0.7961,
+        "roc_auc": 0.7026,
+        "confusion_matrix": [
+          [
+            60,
+            101
+          ],
+          [
+            66,
+            326
+          ]
+        ]
+      },
+      "train_test_acc_gap": 21.75,
+      "train_test_f1_gap": 14.82
+    },
+    {
+      "name": "Exp 5: Misclassification-Only (misc=1.5, correct=1.0)",
+      "key": "misc_only_hem",
+      "train_metrics": {
+        "accuracy": 0.8817,
+        "precision": 0.8813,
+        "recall": 0.9699,
+        "f1": 0.9235,
+        "roc_auc": 0.9418,
+        "confusion_matrix": [
+          [
+            418,
+            239
+          ],
+          [
+            55,
+            1774
+          ]
+        ]
+      },
+      "val_metrics": {
+        "accuracy": 0.7268,
+        "precision": 0.7915,
+        "recall": 0.8591,
+        "f1": 0.8239,
+        "roc_auc": 0.6878,
+        "confusion_matrix": [
+          [
+            51,
+            98
+          ],
+          [
+            61,
+            372
+          ]
+        ]
+      },
+      "test_metrics": {
+        "accuracy": 0.7089,
+        "precision": 0.7607,
+        "recall": 0.8597,
+        "f1": 0.8072,
+        "roc_auc": 0.7224,
+        "confusion_matrix": [
+          [
+            55,
+            106
+          ],
+          [
+            55,
+            337
+          ]
+        ]
+      },
+      "train_test_acc_gap": 17.28,
+      "train_test_f1_gap": 11.63
+    }
+  ],
+  "top_validation_model": "baseline",
+  "top_test_model": "baseline",
+  "baseline_selected_as_production": true
+}

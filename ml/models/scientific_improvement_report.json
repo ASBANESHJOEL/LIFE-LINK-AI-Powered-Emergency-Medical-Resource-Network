@@ -1,0 +1,439 @@
+{
+  "study_timestamp": "2026-09-15T14:04:57.784994",
+  "target_audit": {
+    "total_samples": 3621,
+    "positive_count": 2654,
+    "negative_count": 967,
+    "positive_prevalence": 73.29,
+    "majority_class_accuracy": 70.89
+  },
+  "feature_engineering": {
+    "evaluated_features": [
+      "is_exact_blood_match",
+      "is_blood_compatible",
+      "is_universal_donor",
+      "donor_is_verified",
+      "donor_is_eligible",
+      "donor_is_available",
+      "donor_response_rate",
+      "donor_history_count",
+      "donor_positive_responses",
+      "days_since_last_donation",
+      "dispatch_hour",
+      "dispatch_day_of_week",
+      "is_weekend",
+      "is_night_dispatch",
+      "is_business_hours",
+      "requested_quantity",
+      "urgency_level",
+      "is_resource_blood",
+      "recent_response_rate_last_5",
+      "recent_positive_responses_last_5",
+      "dispatches_since_last_donation",
+      "time_since_previous_dispatch_hours"
+    ],
+    "validation_18_f1": 0.8301,
+    "validation_22_f1": 0.8388,
+    "adopted_extended": true
+  },
+  "hyperparameter_study": {
+    "best_hyperparameters": {
+      "n_estimators": 300,
+      "max_depth": 4,
+      "learning_rate": 0.03,
+      "min_child_weight": 3,
+      "gamma": 0.3,
+      "subsample": 0.8,
+      "colsample_bytree": 0.8,
+      "reg_alpha": 0.1,
+      "reg_lambda": 1.0,
+      "objective": "binary:logistic",
+      "eval_metric": "logloss",
+      "random_state": 42
+    },
+    "validation_f1": 0.8553
+  },
+  "threshold_study": {
+    "optimal_threshold": 0.5,
+    "threshold_grid_results": [
+      {
+        "threshold": 0.3,
+        "accuracy": 0.7509,
+        "f1": 0.8549,
+        "precision": 0.7544,
+        "recall": 0.9861
+      },
+      {
+        "threshold": 0.32,
+        "accuracy": 0.7491,
+        "f1": 0.8531,
+        "precision": 0.7558,
+        "recall": 0.9792
+      },
+      {
+        "threshold": 0.34,
+        "accuracy": 0.744,
+        "f1": 0.8493,
+        "precision": 0.7554,
+        "recall": 0.97
+      },
+      {
+        "threshold": 0.36,
+        "accuracy": 0.744,
+        "f1": 0.8484,
+        "precision": 0.7582,
+        "recall": 0.963
+      },
+      {
+        "threshold": 0.38,
+        "accuracy": 0.7491,
+        "f1": 0.8507,
+        "precision": 0.7633,
+        "recall": 0.9607
+      },
+      {
+        "threshold": 0.4,
+        "accuracy": 0.7543,
+        "f1": 0.8527,
+        "precision": 0.7695,
+        "recall": 0.9561
+      },
+      {
+        "threshold": 0.42,
+        "accuracy": 0.7543,
+        "f1": 0.8512,
+        "precision": 0.7746,
+        "recall": 0.9446
+      },
+      {
+        "threshold": 0.44,
+        "accuracy": 0.7646,
+        "f1": 0.8559,
+        "precision": 0.7857,
+        "recall": 0.94
+      },
+      {
+        "threshold": 0.46,
+        "accuracy": 0.7612,
+        "f1": 0.8526,
+        "precision": 0.7882,
+        "recall": 0.9284
+      },
+      {
+        "threshold": 0.48,
+        "accuracy": 0.7646,
+        "f1": 0.8532,
+        "precision": 0.796,
+        "recall": 0.9192
+      },
+      {
+        "threshold": 0.5,
+        "accuracy": 0.7698,
+        "f1": 0.8553,
+        "precision": 0.8032,
+        "recall": 0.9145
+      },
+      {
+        "threshold": 0.52,
+        "accuracy": 0.7577,
+        "f1": 0.8456,
+        "precision": 0.8042,
+        "recall": 0.8915
+      },
+      {
+        "threshold": 0.54,
+        "accuracy": 0.7526,
+        "f1": 0.8414,
+        "precision": 0.8042,
+        "recall": 0.8822
+      },
+      {
+        "threshold": 0.56,
+        "accuracy": 0.7423,
+        "f1": 0.8315,
+        "precision": 0.8096,
+        "recall": 0.8545
+      },
+      {
+        "threshold": 0.58,
+        "accuracy": 0.7371,
+        "f1": 0.8263,
+        "precision": 0.8125,
+        "recall": 0.8406
+      },
+      {
+        "threshold": 0.6,
+        "accuracy": 0.7234,
+        "f1": 0.8152,
+        "precision": 0.8105,
+        "recall": 0.8199
+      },
+      {
+        "threshold": 0.62,
+        "accuracy": 0.7148,
+        "f1": 0.8065,
+        "precision": 0.8141,
+        "recall": 0.7991
+      },
+      {
+        "threshold": 0.64,
+        "accuracy": 0.7113,
+        "f1": 0.8009,
+        "precision": 0.8224,
+        "recall": 0.7806
+      },
+      {
+        "threshold": 0.66,
+        "accuracy": 0.701,
+        "f1": 0.7893,
+        "precision": 0.8295,
+        "recall": 0.7529
+      },
+      {
+        "threshold": 0.68,
+        "accuracy": 0.6924,
+        "f1": 0.7787,
+        "precision": 0.8378,
+        "recall": 0.7275
+      },
+      {
+        "threshold": 0.7,
+        "accuracy": 0.6787,
+        "f1": 0.7642,
+        "precision": 0.8417,
+        "recall": 0.6998
+      }
+    ]
+  },
+  "candidate_comparisons": [
+    {
+      "name": "Majority-Class Dummy Baseline",
+      "train_acc": 73.57,
+      "val_acc": 74.4,
+      "test_metrics": {
+        "accuracy": 0.7089,
+        "precision": 0.7089,
+        "recall": 1.0,
+        "f1": 0.8296,
+        "roc_auc": 0.5,
+        "confusion_matrix": [
+          [
+            0,
+            161
+          ],
+          [
+            0,
+            392
+          ]
+        ]
+      },
+      "train_test_gap": 2.69
+    },
+    {
+      "name": "A. Current Baseline (18 feats, thr=0.5)",
+      "train_acc": 85.72,
+      "val_acc": 73.2,
+      "test_metrics": {
+        "accuracy": 0.7288,
+        "precision": 0.7654,
+        "recall": 0.8903,
+        "f1": 0.8231,
+        "roc_auc": 0.7237,
+        "confusion_matrix": [
+          [
+            54,
+            107
+          ],
+          [
+            43,
+            349
+          ]
+        ]
+      },
+      "train_test_gap": 12.84
+    },
+    {
+      "name": "B. Best Tuned XGBoost (18 feats, thr=0.5)",
+      "train_acc": 82.38,
+      "val_acc": 75.09,
+      "test_metrics": {
+        "accuracy": 0.7378,
+        "precision": 0.7702,
+        "recall": 0.898,
+        "f1": 0.8292,
+        "roc_auc": 0.7467,
+        "confusion_matrix": [
+          [
+            56,
+            105
+          ],
+          [
+            40,
+            352
+          ]
+        ]
+      },
+      "train_test_gap": 8.6
+    },
+    {
+      "name": "C. Best Tuned + Extended Feats (22 feats, thr=0.5)",
+      "train_acc": 83.39,
+      "val_acc": 76.98,
+      "test_metrics": {
+        "accuracy": 0.7342,
+        "precision": 0.7646,
+        "recall": 0.9031,
+        "f1": 0.8281,
+        "roc_auc": 0.7511,
+        "confusion_matrix": [
+          [
+            52,
+            109
+          ],
+          [
+            38,
+            354
+          ]
+        ]
+      },
+      "train_test_gap": 9.97
+    },
+    {
+      "name": "D. Best Model + Optimal Thr (0.50)",
+      "train_acc": 83.39,
+      "val_acc": 76.98,
+      "test_metrics": {
+        "accuracy": 0.7342,
+        "precision": 0.7646,
+        "recall": 0.9031,
+        "f1": 0.8281,
+        "roc_auc": 0.7511,
+        "confusion_matrix": [
+          [
+            52,
+            109
+          ],
+          [
+            38,
+            354
+          ]
+        ]
+      },
+      "train_test_gap": 9.97
+    }
+  ],
+  "feature_importance_ranking": [
+    {
+      "feature": "is_blood_compatible",
+      "gain": 21.3391,
+      "weight": 101
+    },
+    {
+      "feature": "donor_is_available",
+      "gain": 11.4637,
+      "weight": 132
+    },
+    {
+      "feature": "is_exact_blood_match",
+      "gain": 6.7714,
+      "weight": 109
+    },
+    {
+      "feature": "is_night_dispatch",
+      "gain": 5.9324,
+      "weight": 95
+    },
+    {
+      "feature": "donor_is_eligible",
+      "gain": 5.063,
+      "weight": 135
+    },
+    {
+      "feature": "is_business_hours",
+      "gain": 5.0079,
+      "weight": 61
+    },
+    {
+      "feature": "is_weekend",
+      "gain": 3.6503,
+      "weight": 15
+    },
+    {
+      "feature": "dispatch_hour",
+      "gain": 3.3053,
+      "weight": 452
+    },
+    {
+      "feature": "donor_is_verified",
+      "gain": 3.1892,
+      "weight": 48
+    },
+    {
+      "feature": "recent_response_rate_last_5",
+      "gain": 3.1706,
+      "weight": 117
+    },
+    {
+      "feature": "donor_history_count",
+      "gain": 3.161,
+      "weight": 205
+    },
+    {
+      "feature": "donor_response_rate",
+      "gain": 3.0429,
+      "weight": 217
+    },
+    {
+      "feature": "requested_quantity",
+      "gain": 3.0238,
+      "weight": 216
+    },
+    {
+      "feature": "recent_positive_responses_last_5",
+      "gain": 3.0235,
+      "weight": 57
+    },
+    {
+      "feature": "time_since_previous_dispatch_hours",
+      "gain": 3.0075,
+      "weight": 616
+    },
+    {
+      "feature": "days_since_last_donation",
+      "gain": 2.9854,
+      "weight": 499
+    },
+    {
+      "feature": "is_resource_blood",
+      "gain": 2.9648,
+      "weight": 75
+    },
+    {
+      "feature": "urgency_level",
+      "gain": 2.8877,
+      "weight": 185
+    },
+    {
+      "feature": "donor_positive_responses",
+      "gain": 2.7997,
+      "weight": 155
+    },
+    {
+      "feature": "dispatch_day_of_week",
+      "gain": 2.7305,
+      "weight": 241
+    },
+    {
+      "feature": "dispatches_since_last_donation",
+      "gain": 2.6419,
+      "weight": 58
+    },
+    {
+      "feature": "is_universal_donor",
+      "gain": 2.5699,
+      "weight": 14
+    }
+  ],
+  "selected_production_model": "xgboost_optimized",
+  "selected_threshold": 0.5
+}

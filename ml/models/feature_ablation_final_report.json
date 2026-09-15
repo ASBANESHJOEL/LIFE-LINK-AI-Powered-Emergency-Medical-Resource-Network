@@ -1,0 +1,586 @@
+{
+  "study_timestamp": "2026-09-15T14:07:47.263334",
+  "validation_ablations": [
+    {
+      "name": "Exp 1: Full 18 Features (Reference)",
+      "feature_count": 18,
+      "val_metrics": {
+        "accuracy": 0.7509,
+        "precision": 0.7939,
+        "recall": 0.8984,
+        "f1": 0.8429,
+        "roc_auc": 0.7126,
+        "confusion_matrix": [
+          [
+            48,
+            101
+          ],
+          [
+            44,
+            389
+          ]
+        ]
+      },
+      "train_val_gap": 7.29
+    },
+    {
+      "name": "Exp 2A: Time (Hour only)",
+      "feature_count": 15,
+      "val_metrics": {
+        "accuracy": 0.7509,
+        "precision": 0.7903,
+        "recall": 0.9053,
+        "f1": 0.8439,
+        "roc_auc": 0.7178,
+        "confusion_matrix": [
+          [
+            45,
+            104
+          ],
+          [
+            41,
+            392
+          ]
+        ]
+      },
+      "train_val_gap": 7.13
+    },
+    {
+      "name": "Exp 2B: Time (Hour + Weekend)",
+      "feature_count": 16,
+      "val_metrics": {
+        "accuracy": 0.7526,
+        "precision": 0.7943,
+        "recall": 0.9007,
+        "f1": 0.8442,
+        "roc_auc": 0.7186,
+        "confusion_matrix": [
+          [
+            48,
+            101
+          ],
+          [
+            43,
+            390
+          ]
+        ]
+      },
+      "train_val_gap": 7.12
+    },
+    {
+      "name": "Exp 2C: Time (Hour + Night + Biz)",
+      "feature_count": 17,
+      "val_metrics": {
+        "accuracy": 0.7405,
+        "precision": 0.7866,
+        "recall": 0.8938,
+        "f1": 0.8368,
+        "roc_auc": 0.7159,
+        "confusion_matrix": [
+          [
+            44,
+            105
+          ],
+          [
+            46,
+            387
+          ]
+        ]
+      },
+      "train_val_gap": 8.45
+    },
+    {
+      "name": "Exp 3A: Blood (Exact + Compatible, drop Univ)",
+      "feature_count": 17,
+      "val_metrics": {
+        "accuracy": 0.7423,
+        "precision": 0.7882,
+        "recall": 0.8938,
+        "f1": 0.8377,
+        "roc_auc": 0.7201,
+        "confusion_matrix": [
+          [
+            45,
+            104
+          ],
+          [
+            46,
+            387
+          ]
+        ]
+      },
+      "train_val_gap": 8.11
+    },
+    {
+      "name": "Exp 3B: Blood (Compatible only)",
+      "feature_count": 16,
+      "val_metrics": {
+        "accuracy": 0.744,
+        "precision": 0.7874,
+        "recall": 0.8984,
+        "f1": 0.8393,
+        "roc_auc": 0.7065,
+        "confusion_matrix": [
+          [
+            44,
+            105
+          ],
+          [
+            44,
+            389
+          ]
+        ]
+      },
+      "train_val_gap": 7.94
+    },
+    {
+      "name": "Exp 3C: Blood (Exact only)",
+      "feature_count": 16,
+      "val_metrics": {
+        "accuracy": 0.7491,
+        "precision": 0.7842,
+        "recall": 0.9145,
+        "f1": 0.8443,
+        "roc_auc": 0.6956,
+        "confusion_matrix": [
+          [
+            40,
+            109
+          ],
+          [
+            37,
+            396
+          ]
+        ]
+      },
+      "train_val_gap": 7.07
+    },
+    {
+      "name": "Exp 4A: History (Rate + Days, drop Count/Pos)",
+      "feature_count": 16,
+      "val_metrics": {
+        "accuracy": 0.7491,
+        "precision": 0.7911,
+        "recall": 0.9007,
+        "f1": 0.8423,
+        "roc_auc": 0.7098,
+        "confusion_matrix": [
+          [
+            46,
+            103
+          ],
+          [
+            43,
+            390
+          ]
+        ]
+      },
+      "train_val_gap": 7.39
+    },
+    {
+      "name": "Exp 4B: History (Rate + Count + Days, drop Pos)",
+      "feature_count": 17,
+      "val_metrics": {
+        "accuracy": 0.7457,
+        "precision": 0.7926,
+        "recall": 0.8915,
+        "f1": 0.8391,
+        "roc_auc": 0.7108,
+        "confusion_matrix": [
+          [
+            48,
+            101
+          ],
+          [
+            47,
+            386
+          ]
+        ]
+      },
+      "train_val_gap": 8.01
+    },
+    {
+      "name": "Exp 5: Combined Parsimonious (15 Features)",
+      "feature_count": 15,
+      "val_metrics": {
+        "accuracy": 0.7491,
+        "precision": 0.7935,
+        "recall": 0.8961,
+        "f1": 0.8416,
+        "roc_auc": 0.7156,
+        "confusion_matrix": [
+          [
+            48,
+            101
+          ],
+          [
+            45,
+            388
+          ]
+        ]
+      },
+      "train_val_gap": 7.43
+    }
+  ],
+  "cross_validation_results": [
+    {
+      "name": "Full 18 Features",
+      "features": [
+        "is_exact_blood_match",
+        "is_blood_compatible",
+        "is_universal_donor",
+        "donor_is_verified",
+        "donor_is_eligible",
+        "donor_is_available",
+        "donor_response_rate",
+        "donor_history_count",
+        "donor_positive_responses",
+        "days_since_last_donation",
+        "dispatch_hour",
+        "dispatch_day_of_week",
+        "is_weekend",
+        "is_night_dispatch",
+        "is_business_hours",
+        "requested_quantity",
+        "urgency_level",
+        "is_resource_blood"
+      ],
+      "metrics": {
+        "accuracy_mean": 0.7559,
+        "accuracy_std": 0.014,
+        "precision_mean": 0.7839,
+        "precision_std": 0.0145,
+        "recall_mean": 0.9234,
+        "recall_std": 0.0109,
+        "f1_mean": 0.8479,
+        "f1_std": 0.0099,
+        "roc_auc_mean": 0.7256,
+        "roc_auc_std": 0.0234
+      }
+    },
+    {
+      "name": "Time Variant 2C (Hour+Night+Biz)",
+      "features": [
+        "is_exact_blood_match",
+        "is_blood_compatible",
+        "is_universal_donor",
+        "donor_is_verified",
+        "donor_is_eligible",
+        "donor_is_available",
+        "donor_response_rate",
+        "donor_history_count",
+        "donor_positive_responses",
+        "days_since_last_donation",
+        "dispatch_hour",
+        "dispatch_day_of_week",
+        "is_night_dispatch",
+        "is_business_hours",
+        "requested_quantity",
+        "urgency_level",
+        "is_resource_blood"
+      ],
+      "metrics": {
+        "accuracy_mean": 0.7568,
+        "accuracy_std": 0.015,
+        "precision_mean": 0.7835,
+        "precision_std": 0.0144,
+        "recall_mean": 0.9261,
+        "recall_std": 0.0096,
+        "f1_mean": 0.8488,
+        "f1_std": 0.0104,
+        "roc_auc_mean": 0.7256,
+        "roc_auc_std": 0.025
+      }
+    },
+    {
+      "name": "Blood Variant 3A (Exact+Compat)",
+      "features": [
+        "is_exact_blood_match",
+        "is_blood_compatible",
+        "donor_is_verified",
+        "donor_is_eligible",
+        "donor_is_available",
+        "donor_response_rate",
+        "donor_history_count",
+        "donor_positive_responses",
+        "days_since_last_donation",
+        "dispatch_hour",
+        "dispatch_day_of_week",
+        "is_weekend",
+        "is_night_dispatch",
+        "is_business_hours",
+        "requested_quantity",
+        "urgency_level",
+        "is_resource_blood"
+      ],
+      "metrics": {
+        "accuracy_mean": 0.7572,
+        "accuracy_std": 0.0143,
+        "precision_mean": 0.7834,
+        "precision_std": 0.0155,
+        "recall_mean": 0.9269,
+        "recall_std": 0.0116,
+        "f1_mean": 0.8491,
+        "f1_std": 0.0101,
+        "roc_auc_mean": 0.7238,
+        "roc_auc_std": 0.0234
+      }
+    },
+    {
+      "name": "History Variant 4B (Rate+Count+Days)",
+      "features": [
+        "is_exact_blood_match",
+        "is_blood_compatible",
+        "is_universal_donor",
+        "donor_is_verified",
+        "donor_is_eligible",
+        "donor_is_available",
+        "donor_response_rate",
+        "donor_history_count",
+        "days_since_last_donation",
+        "dispatch_hour",
+        "dispatch_day_of_week",
+        "is_weekend",
+        "is_night_dispatch",
+        "is_business_hours",
+        "requested_quantity",
+        "urgency_level",
+        "is_resource_blood"
+      ],
+      "metrics": {
+        "accuracy_mean": 0.7572,
+        "accuracy_std": 0.013,
+        "precision_mean": 0.7845,
+        "precision_std": 0.0137,
+        "recall_mean": 0.9247,
+        "recall_std": 0.0158,
+        "f1_mean": 0.8487,
+        "f1_std": 0.0095,
+        "roc_auc_mean": 0.7227,
+        "roc_auc_std": 0.026
+      }
+    },
+    {
+      "name": "Combined Parsimonious (15 Features)",
+      "features": [
+        "is_exact_blood_match",
+        "is_blood_compatible",
+        "donor_is_verified",
+        "donor_is_eligible",
+        "donor_is_available",
+        "donor_response_rate",
+        "donor_history_count",
+        "days_since_last_donation",
+        "dispatch_hour",
+        "dispatch_day_of_week",
+        "is_night_dispatch",
+        "is_business_hours",
+        "requested_quantity",
+        "urgency_level",
+        "is_resource_blood"
+      ],
+      "metrics": {
+        "accuracy_mean": 0.7565,
+        "accuracy_std": 0.014,
+        "precision_mean": 0.7846,
+        "precision_std": 0.0158,
+        "recall_mean": 0.9234,
+        "recall_std": 0.0125,
+        "f1_mean": 0.8482,
+        "f1_std": 0.0097,
+        "roc_auc_mean": 0.7235,
+        "roc_auc_std": 0.0224
+      }
+    }
+  ],
+  "test_results": [
+    {
+      "name": "Full 18 Features",
+      "feature_count": 18,
+      "train_accuracy": 82.38,
+      "test_metrics": {
+        "accuracy": 0.7378,
+        "precision": 0.7702,
+        "recall": 0.898,
+        "f1": 0.8292,
+        "roc_auc": 0.7467,
+        "confusion_matrix": [
+          [
+            56,
+            105
+          ],
+          [
+            40,
+            352
+          ]
+        ]
+      },
+      "train_test_gap": 8.6
+    },
+    {
+      "name": "Time Variant 2C (Hour+Night+Biz)",
+      "feature_count": 17,
+      "train_accuracy": 82.5,
+      "test_metrics": {
+        "accuracy": 0.7324,
+        "precision": 0.7675,
+        "recall": 0.8929,
+        "f1": 0.8255,
+        "roc_auc": 0.7512,
+        "confusion_matrix": [
+          [
+            55,
+            106
+          ],
+          [
+            42,
+            350
+          ]
+        ]
+      },
+      "train_test_gap": 9.26
+    },
+    {
+      "name": "Blood Variant 3A (Exact+Compat)",
+      "feature_count": 17,
+      "train_accuracy": 82.34,
+      "test_metrics": {
+        "accuracy": 0.736,
+        "precision": 0.7709,
+        "recall": 0.8929,
+        "f1": 0.8274,
+        "roc_auc": 0.7484,
+        "confusion_matrix": [
+          [
+            57,
+            104
+          ],
+          [
+            42,
+            350
+          ]
+        ]
+      },
+      "train_test_gap": 8.74
+    },
+    {
+      "name": "History Variant 4B (Rate+Count+Days)",
+      "feature_count": 17,
+      "train_accuracy": 82.58,
+      "test_metrics": {
+        "accuracy": 0.736,
+        "precision": 0.7709,
+        "recall": 0.8929,
+        "f1": 0.8274,
+        "roc_auc": 0.7481,
+        "confusion_matrix": [
+          [
+            57,
+            104
+          ],
+          [
+            42,
+            350
+          ]
+        ]
+      },
+      "train_test_gap": 8.98
+    },
+    {
+      "name": "Combined Parsimonious (15 Features)",
+      "feature_count": 15,
+      "train_accuracy": 82.34,
+      "test_metrics": {
+        "accuracy": 0.7233,
+        "precision": 0.7626,
+        "recall": 0.8852,
+        "f1": 0.8194,
+        "roc_auc": 0.7491,
+        "confusion_matrix": [
+          [
+            53,
+            108
+          ],
+          [
+            45,
+            347
+          ]
+        ]
+      },
+      "train_test_gap": 10.01
+    }
+  ],
+  "winning_configuration": "Full 18 Features",
+  "winning_features": [
+    "is_exact_blood_match",
+    "is_blood_compatible",
+    "is_universal_donor",
+    "donor_is_verified",
+    "donor_is_eligible",
+    "donor_is_available",
+    "donor_response_rate",
+    "donor_history_count",
+    "donor_positive_responses",
+    "days_since_last_donation",
+    "dispatch_hour",
+    "dispatch_day_of_week",
+    "is_weekend",
+    "is_night_dispatch",
+    "is_business_hours",
+    "requested_quantity",
+    "urgency_level",
+    "is_resource_blood"
+  ],
+  "feature_importance_top10": [
+    {
+      "feature": "is_blood_compatible",
+      "gain": 18.3055,
+      "weight": 123
+    },
+    {
+      "feature": "donor_is_available",
+      "gain": 10.2876,
+      "weight": 146
+    },
+    {
+      "feature": "is_exact_blood_match",
+      "gain": 5.8447,
+      "weight": 122
+    },
+    {
+      "feature": "is_night_dispatch",
+      "gain": 5.4227,
+      "weight": 99
+    },
+    {
+      "feature": "donor_is_eligible",
+      "gain": 4.9758,
+      "weight": 131
+    },
+    {
+      "feature": "is_business_hours",
+      "gain": 4.1438,
+      "weight": 70
+    },
+    {
+      "feature": "donor_is_verified",
+      "gain": 3.1965,
+      "weight": 50
+    },
+    {
+      "feature": "dispatch_hour",
+      "gain": 3.087,
+      "weight": 541
+    },
+    {
+      "feature": "donor_response_rate",
+      "gain": 2.8865,
+      "weight": 350
+    },
+    {
+      "feature": "urgency_level",
+      "gain": 2.8186,
+      "weight": 197
+    }
+  ]
+}

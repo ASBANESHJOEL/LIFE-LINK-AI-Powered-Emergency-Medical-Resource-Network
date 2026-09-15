@@ -21,3 +21,17 @@ pnpm-debug.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Python & ML
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.venv/
+venv/
+ENV/
+ml/data/raw/*.parquet
+ml/data/processed/*.parquet
