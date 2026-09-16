@@ -20,6 +20,7 @@ declare
   v_reserved integer := 0;
   v_row record;
   v_take integer;
+  v_allocated integer := 0;
   v_transferable integer;
 begin
   select * into v_offer
@@ -82,79 +83,49 @@ begin
     order by bi.expiry_date asc, bi.last_updated asc, bi.id
     for update
   loop
-    exit when v_take <= 0;
+    exit when v_allocated >= v_take;
     v_transferable := greatest(0, v_row.available_units - v_row.critical_level);
     if v_transferable <= 0 then
       continue;
     end if;
 
-    v_take := v_take - least(v_take, v_transferable);
+    v_transferable := least(v_transferable, v_take - v_allocated);
+    update public.blood_inventory
+    set available_units = available_units - v_transferable,
+        reserved_units = reserved_units + v_transferable,
+        last_updated = now()
+    where id = v_row.id;
+
+    insert into public.request_inventory_allocations(request_id, inventory_id, blood_bank_id, allocated_units)
+    values (v_offer.request_id, v_row.id, p_blood_bank_id, v_transferable);
+
+    v_allocated := v_allocated + v_transferable;
   end loop;
 
-  v_take := least(v_offer.offered_units, v_remaining);
-  declare
-    v_allocated integer := 0;
-  begin
-    for v_row in
-      select bi.id, bi.available_units, bi.critical_level
-      from public.blood_inventory bi
-      where bi.blood_bank_id = p_blood_bank_id
-        and bi.blood_group = v_offer.blood_group
-        and bi.component_type = v_offer.component_type
-        and bi.expiry_date > now()
-        and bi.available_units > bi.critical_level
-      order by bi.expiry_date asc, bi.last_updated asc, bi.id
-      for update
-    loop
-      exit when v_allocated >= v_take;
-      v_transferable := greatest(0, v_row.available_units - v_row.critical_level);
-      if v_transferable <= 0 then
-        continue;
-      end if;
+  if v_allocated < v_take then
+    raise exception using errcode = '40001', message = 'insufficient transferable inventory for this offer';
+  end if;
 
-      v_take := least(v_offer.offered_units, v_remaining);
-      v_transferable := least(v_transferable, v_take - v_allocated);
-      if v_transferable <= 0 then
-        continue;
-      end if;
+  update public.blood_bank_transfer_offers
+  set status = 'ACCEPTED', accepted_at = now()
+  where id = v_offer.id and status = 'OFFERED';
 
-      update public.blood_inventory
-      set available_units = available_units - v_transferable,
-          reserved_units = reserved_units + v_transferable,
-          last_updated = now()
-      where id = v_row.id;
+  if not found then
+    raise exception using errcode = '40001', message = 'transfer offer changed during acceptance';
+  end if;
 
-      insert into public.request_inventory_allocations(request_id, inventory_id, blood_bank_id, allocated_units)
-      values (v_offer.request_id, v_row.id, p_blood_bank_id, v_transferable);
+  v_reserved := v_reserved + v_allocated;
+  update public.emergency_requests
+  set status = case when v_reserved >= v_request.quantity then 'FULFILLED'::request_status else 'PARTIALLY_FULFILLED'::request_status end,
+      completed_at = case when v_reserved >= v_request.quantity then coalesce(completed_at, now()) else null end
+  where id = v_request.id;
 
-      v_allocated := v_allocated + v_transferable;
-    end loop;
-
-    if v_allocated < v_take then
-      raise exception using errcode = '40001', message = 'insufficient transferable inventory for this offer';
-    end if;
-
-    update public.blood_bank_transfer_offers
-    set status = 'ACCEPTED', accepted_at = now()
-    where id = v_offer.id and status = 'OFFERED';
-
-    if not found then
-      raise exception using errcode = '40001', message = 'transfer offer changed during acceptance';
-    end if;
-
-    v_reserved := v_reserved + v_allocated;
-    update public.emergency_requests
-    set status = case when v_reserved >= v_request.quantity then 'FULFILLED'::request_status else 'PARTIALLY_FULFILLED'::request_status end,
-        completed_at = case when v_reserved >= v_request.quantity then coalesce(completed_at, now()) else null end
-    where id = v_request.id;
-
-    offer_id := v_offer.id;
-    request_id := v_offer.request_id;
-    blood_bank_id := p_blood_bank_id;
-    reserved_units := v_allocated;
-    remaining_request_units := greatest(0, v_request.quantity - v_reserved);
-    return next;
-  end;
+  offer_id := v_offer.id;
+  request_id := v_offer.request_id;
+  blood_bank_id := p_blood_bank_id;
+  reserved_units := v_allocated;
+  remaining_request_units := greatest(0, v_request.quantity - v_reserved);
+  return next;
 end;
 $$;
 
