@@ -1,0 +1,2 @@
+CREATE INDEX IF NOT EXISTS idx_request_inventory_allocations_blood_bank
+ON public.request_inventory_allocations (blood_bank_id);
