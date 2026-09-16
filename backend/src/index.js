@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from './middleware/auth.js';
 import requestsRouter from './routes/requests.js';
 import inventoryRouter from './routes/inventoryRoutes.js';
 import peerTransferRouter from './routes/peerTransferRoutes.js';
+import peerTransferAcceptanceRouter from './routes/peerTransferAcceptanceRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,6 +72,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 app.post('/api/requests', requireAuth, requireRole('HOSPITAL'), requestsRouter);
 app.use('/api', inventoryRouter);
 app.use('/api', peerTransferRouter);
+app.use('/api', peerTransferAcceptanceRouter);
 
 app.get('/api/donor/ping', requireAuth, requireRole('DONOR'), (req, res) => {
   res.json({ message: 'Authorized: DONOR access verified', userId: req.user.id, role: req.user.role });
