@@ -4,21 +4,19 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { requireAuth, requireRole } from './middleware/auth.js';
+import requestsRouter from './routes/requests.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Support loading .env from backend directory or root
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Security: Disable X-Powered-By header
 app.disable('x-powered-by');
 
-// Security: Enforce basic defense-in-depth headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -26,8 +24,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Production-hardened CORS configuration
 const allowedOrigins = [
+  'https://life-link.in',
+  'https://www.life-link.in',
   'https://life-link-ai-powered-emergency-medi.vercel.app',
   'http://localhost:3000',
   'http://localhost:5173'
@@ -39,7 +38,6 @@ if (process.env.FRONTEND_URL) {
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow non-browser requests (curl, server-to-server reverse proxy, health checks)
     if (!origin) return callback(null, true);
 
     const isExplicitlyAllowed = allowedOrigins.includes(origin);
@@ -57,9 +55,8 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 
-// Public health check for Railway/Render probes
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -72,8 +69,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Authenticated identity endpoint
-// Resolves public.users record and organization membership
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({
     user: req.user,
@@ -81,7 +76,8 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   });
 });
 
-// Role-guarded test endpoints
+app.post('/api/requests', requireAuth, requireRole('HOSPITAL'), requestsRouter);
+
 app.get('/api/donor/ping', requireAuth, requireRole('DONOR'), (req, res) => {
   res.json({
     message: 'Authorized: DONOR access verified',
@@ -116,7 +112,6 @@ app.get('/api/admin/ping', requireAuth, requireRole('ADMIN'), (req, res) => {
   });
 });
 
-// Start server if not imported
 let server;
 if (process.env.NODE_ENV !== 'test') {
   server = app.listen(port, () => {
@@ -124,7 +119,6 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-// Graceful termination handling for container lifecycle
 const handleShutdown = (signal) => {
   console.log(`Received ${signal}. Shutting down gracefully...`);
   if (server) {
