@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { requireAuth, requireRole } from './middleware/auth.js';
 import requestsRouter from './routes/requests.js';
+import inventoryRouter from './routes/inventoryRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,6 +78,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 });
 
 app.post('/api/requests', requireAuth, requireRole('HOSPITAL'), requestsRouter);
+app.use('/api', inventoryRouter);
 
 app.get('/api/donor/ping', requireAuth, requireRole('DONOR'), (req, res) => {
   res.json({
