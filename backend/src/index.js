@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { requireAuth, requireRole } from './middleware/auth.js';
 import requestsRouter from './routes/requests.js';
 import inventoryRouter from './routes/inventoryRoutes.js';
+import peerTransferRouter from './routes/peerTransferRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,22 +34,15 @@ const allowedOrigins = [
   'http://localhost:5173'
 ];
 
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL.replace(/\/$/, ''));
-}
+if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL.replace(/\/$/, ''));
 
 const corsOptions = {
   origin: (origin, callback) => {
     if (!origin) return callback(null, true);
-
     const isExplicitlyAllowed = allowedOrigins.includes(origin);
     const isVercelPreview = /\.vercel\.app$/.test(new URL(origin).hostname);
-
-    if (isExplicitlyAllowed || isVercelPreview || process.env.NODE_ENV !== 'production') {
-      callback(null, true);
-    } else {
-      callback(new Error(`CORS blocked for origin: ${origin}`));
-    }
+    if (isExplicitlyAllowed || isVercelPreview || process.env.NODE_ENV !== 'production') callback(null, true);
+    else callback(new Error(`CORS blocked for origin: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -71,66 +65,38 @@ app.get('/api/health', (req, res) => {
 });
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({
-    user: req.user,
-    organization: req.organization
-  });
+  res.json({ user: req.user, organization: req.organization });
 });
 
 app.post('/api/requests', requireAuth, requireRole('HOSPITAL'), requestsRouter);
 app.use('/api', inventoryRouter);
+app.use('/api', peerTransferRouter);
 
 app.get('/api/donor/ping', requireAuth, requireRole('DONOR'), (req, res) => {
-  res.json({
-    message: 'Authorized: DONOR access verified',
-    userId: req.user.id,
-    role: req.user.role
-  });
+  res.json({ message: 'Authorized: DONOR access verified', userId: req.user.id, role: req.user.role });
 });
 
 app.get('/api/hospital/ping', requireAuth, requireRole('HOSPITAL'), (req, res) => {
-  res.json({
-    message: 'Authorized: HOSPITAL access verified',
-    userId: req.user.id,
-    role: req.user.role,
-    organization: req.organization
-  });
+  res.json({ message: 'Authorized: HOSPITAL access verified', userId: req.user.id, role: req.user.role, organization: req.organization });
 });
 
 app.get('/api/blood-bank/ping', requireAuth, requireRole('BLOOD_BANK'), (req, res) => {
-  res.json({
-    message: 'Authorized: BLOOD_BANK access verified',
-    userId: req.user.id,
-    role: req.user.role,
-    organization: req.organization
-  });
+  res.json({ message: 'Authorized: BLOOD_BANK access verified', userId: req.user.id, role: req.user.role, organization: req.organization });
 });
 
 app.get('/api/admin/ping', requireAuth, requireRole('ADMIN'), (req, res) => {
-  res.json({
-    message: 'Authorized: ADMIN access verified',
-    userId: req.user.id,
-    role: req.user.role
-  });
+  res.json({ message: 'Authorized: ADMIN access verified', userId: req.user.id, role: req.user.role });
 });
 
 let server;
 if (process.env.NODE_ENV !== 'test') {
-  server = app.listen(port, () => {
-    console.log(`LIFE-LINK Backend running on port ${port} [${process.env.NODE_ENV || 'development'}]`);
-  });
+  server = app.listen(port, () => console.log(`LIFE-LINK Backend running on port ${port} [${process.env.NODE_ENV || 'development'}]`));
 }
 
 const handleShutdown = (signal) => {
   console.log(`Received ${signal}. Shutting down gracefully...`);
-  if (server) {
-    server.close(() => {
-      console.log('HTTP server closed.');
-      process.exit(0);
-    });
-  } else {
-    process.exit(0);
-  }
+  if (server) server.close(() => process.exit(0));
+  else process.exit(0);
 };
 
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
