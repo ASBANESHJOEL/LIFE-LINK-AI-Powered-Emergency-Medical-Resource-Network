@@ -10,6 +10,7 @@ import peerTransferRouter from './routes/peerTransferRoutes.js';
 import peerTransferAcceptanceRouter from './routes/peerTransferAcceptanceRoutes.js';
 import donorEligibilityRouter from './routes/donorEligibilityRoutes.js';
 import donorRankingRouter from './routes/donorRankingRoutes.js';
+import donorDispatchRouter from './routes/donorDispatchRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,6 +77,7 @@ app.use('/api', peerTransferRouter);
 app.use('/api', peerTransferAcceptanceRouter);
 app.use('/api', donorEligibilityRouter);
 app.use('/api', donorRankingRouter);
+app.use('/api', donorDispatchRouter);
 
 app.get('/api/donor/ping', requireAuth, requireRole('DONOR'), (req, res) => {
   res.json({ message: 'Authorized: DONOR access verified', userId: req.user.id, role: req.user.role });
