@@ -1,16 +1,13 @@
 import { Router } from 'express';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { rankEligibleDonors } from '../services/donorRankingService.js';
 
 const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-router.get('/requests/:requestId/donor-ranking', async (req, res) => {
+router.get('/requests/:requestId/donor-ranking', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
   try {
-    if (req.user?.role !== 'HOSPITAL') {
-      return res.status(403).json({ error: 'FORBIDDEN', message: 'Only authenticated hospital users can rank donor candidates' });
-    }
-
     const hospitalId = req.organization?.hospitalId;
     if (!hospitalId) {
       return res.status(403).json({ error: 'HOSPITAL_NOT_PROVISIONED', message: 'No active hospital organization is associated with this account' });
