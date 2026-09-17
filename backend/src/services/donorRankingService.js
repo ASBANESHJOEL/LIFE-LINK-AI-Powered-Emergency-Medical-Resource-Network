@@ -1,10 +1,14 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { findEligibleDonors } from './donorEligibilityService.js';
 
-const ML_API_URL = (process.env.ML_API_URL || '').replace(/\/$/, '');
 const URGENCY_LEVEL = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
 const UNIVERSAL_DONOR_GROUP = 'O_NEGATIVE';
 const DEFAULT_BATCH_SIZE = 5;
+const INFERENCE_CONCURRENCY = 8;
+
+function getMlApiUrl() {
+  return (process.env.ML_API_URL || '').replace(/\/$/, '');
+}
 
 function daysSince(dateValue) {
   if (!dateValue) return 365;
@@ -26,7 +30,7 @@ function buildFeatureVector({ donor, request, historyCount, positiveResponses })
   const isBusinessHours = dispatchHour >= 9 && dispatchHour < 18 && !isWeekend;
 
   return {
-    is_exact_blood_match: Number(donor.bloodGroup === request.bloodGroup),
+    is_exact_blood_match: Number(donor.bloodGroup === request.blood_group),
     is_blood_compatible: 1,
     is_universal_donor: Number(isUniversalDonor({ bloodGroup: donor.bloodGroup, componentType: request.resource_type })),
     donor_is_verified: Number(donor.verified),
@@ -73,7 +77,8 @@ async function getDonorHistory(donorIds, requestId) {
 }
 
 async function predict(features) {
-  if (!ML_API_URL) {
+  const mlApiUrl = getMlApiUrl();
+  if (!mlApiUrl) {
     const err = new Error('ML_API_URL is not configured');
     err.code = 'ML_NOT_CONFIGURED';
     throw err;
@@ -82,7 +87,7 @@ async function predict(features) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 3000);
   try {
-    const response = await fetch(`${ML_API_URL}/predict`, {
+    const response = await fetch(`${mlApiUrl}/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(features),
@@ -106,6 +111,22 @@ async function predict(features) {
   }
 }
 
+async function mapWithConcurrency(items, worker, concurrency = INFERENCE_CONCURRENCY) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()));
+  return results;
+}
+
 export async function rankEligibleDonors({ request, limit = 500, batchSize = DEFAULT_BATCH_SIZE }) {
   const donors = await findEligibleDonors({
     requestId: request.id,
@@ -119,19 +140,17 @@ export async function rankEligibleDonors({ request, limit = 500, batchSize = DEF
   }
 
   const history = await getDonorHistory(donors.map((donor) => donor.donorId), request.id);
-  const ranked = [];
-
-  for (const donor of donors) {
+  const ranked = await mapWithConcurrency(donors, async (donor) => {
     const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
     const features = buildFeatureVector({ donor, request, ...donorHistory });
     const prediction = await predict(features);
-    ranked.push({
+    return {
       ...donor,
       responseProbability: prediction.probability,
       predictedResponse: prediction.prediction,
       modelVersion: prediction.model_version
-    });
-  }
+    };
+  });
 
   ranked.sort((a, b) => {
     if (b.responseProbability !== a.responseProbability) return b.responseProbability - a.responseProbability;
