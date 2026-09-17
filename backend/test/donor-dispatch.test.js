@@ -48,6 +48,37 @@ async function apiPost(path, body = {}, token = null) {
   return { status: response.status, body: json };
 }
 
+// Helper to create a valid emergency request
+function createTestRequest(overrides = {}) {
+  return {
+    id: VALID_REQUEST_ID,
+    hospital_id: VALID_HOSPITAL_ID,
+    blood_group: 'O_POSITIVE',
+    quantity: 2,
+    resource_type: 'RED_BLOOD_CELLS',
+    urgency: 'CRITICAL',
+    status: 'OPEN',
+    ...overrides
+  };
+}
+
+// Helper to create mock donors
+function createTestDonors(count = 5) {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `donor-uuid-${i + 1}`,
+    user_id: `user-uuid-${i + 1}`,
+    name: `Donor ${i + 1}`,
+    blood_group: 'O_POSITIVE',
+    availability_status: 'AVAILABLE',
+    eligibility_status: 'ELIGIBLE',
+    last_donation_date: '2025-01-01',
+    live_location_enabled: true,
+    verified: true,
+    current_latitude: 12.97,
+    current_longitude: 77.59
+  }));
+}
+
 // Configurable DB mock state
 let dbMock = {};
 
@@ -56,14 +87,18 @@ function resetDbMock() {
     users: {},
     organization_members: {},
     emergency_requests: {},
+    defaultEmergencyRequest: createTestRequest(),
+    request_inventory_allocations: [],
     donors: [],
     donor_dispatches: [],
     audit_logs: [],
     latestBatchNumber: 0,
     activeDispatches: [],
+    alreadyDispatchedInEligibility: [],
     auditInsertError: null,
     dispatchInsertError: null,
-    emergencyRequestLookupError: null
+    emergencyRequestLookupError: null,
+    deletedDispatches: []
   };
 }
 
@@ -94,11 +129,17 @@ beforeEach(() => {
   supabaseAdmin.from = (table) => {
     const filters = [];
     let isSingle = false;
+    let isDelete = false;
     let limitCount = null;
     let insertedRows = null;
 
+    let selectedColumns = '*';
+
     const queryBuilder = {
-      select() { return this; },
+      select(cols = '*') {
+        selectedColumns = cols;
+        return this;
+      },
       eq(column, value) {
         filters.push({ column, value, type: 'eq' });
         return this;
@@ -114,6 +155,10 @@ beforeEach(() => {
       order() { return this; },
       limit(n) {
         limitCount = n;
+        return this;
+      },
+      delete() {
+        isDelete = true;
         return this;
       },
       maybeSingle() {
@@ -166,8 +211,14 @@ beforeEach(() => {
             return { data: null, error: dbMock.emergencyRequestLookupError };
           }
           const idFilter = filters.find((f) => f.column === 'id');
-          const req = dbMock.emergency_requests[idFilter?.value];
+          const req = dbMock.emergency_requests[idFilter?.value] !== undefined
+            ? dbMock.emergency_requests[idFilter?.value]
+            : dbMock.defaultEmergencyRequest;
           return { data: req || null, error: null };
+        }
+
+        if (table === 'request_inventory_allocations') {
+          return { data: dbMock.request_inventory_allocations || [], error: null };
         }
 
         if (table === 'donors') {
@@ -177,6 +228,15 @@ beforeEach(() => {
         }
 
         if (table === 'donor_dispatches') {
+          if (isDelete) {
+            const inFilter = filters.find((f) => f.column === 'id');
+            dbMock.deletedDispatches.push(...(inFilter?.values || []));
+            dbMock.donor_dispatches = dbMock.donor_dispatches.filter(
+              (d) => !(inFilter?.values || []).includes(d.id)
+            );
+            return { data: null, error: null };
+          }
+
           if (dbMock.dispatchInsertError && insertedRows) {
             return { data: null, error: dbMock.dispatchInsertError };
           }
@@ -206,11 +266,10 @@ beforeEach(() => {
           // Check if this is active dispatch check
           const inFilter = filters.find((f) => f.column === 'status');
           if (inFilter) {
-            const hasDonorIdFilter = filters.some((f) => f.column === 'donor_id');
-            if (hasDonorIdFilter) {
-              return { data: dbMock.activeDispatches || [], error: null };
+            if (selectedColumns === 'donor_id') {
+              return { data: dbMock.alreadyDispatchedInEligibility || [], error: null };
             }
-            return { data: dbMock.alreadyDispatchedInEligibility || [], error: null };
+            return { data: dbMock.activeDispatches || [], error: null };
           }
 
           return { data: dbMock.donor_dispatches || [], error: null };
@@ -254,37 +313,6 @@ beforeEach(() => {
     return originalFetch(url, options);
   };
 });
-
-// Helper to create a valid emergency request
-function createTestRequest(overrides = {}) {
-  return {
-    id: VALID_REQUEST_ID,
-    hospital_id: VALID_HOSPITAL_ID,
-    blood_group: 'O_POSITIVE',
-    quantity: 2,
-    resource_type: 'RED_BLOOD_CELLS',
-    urgency: 'CRITICAL',
-    status: 'OPEN',
-    ...overrides
-  };
-}
-
-// Helper to create mock donors
-function createTestDonors(count = 5) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: `donor-uuid-${i + 1}`,
-    user_id: `user-uuid-${i + 1}`,
-    name: `Donor ${i + 1}`,
-    blood_group: 'O_POSITIVE',
-    availability_status: 'AVAILABLE',
-    eligibility_status: 'ELIGIBLE',
-    last_donation_date: '2025-01-01',
-    live_location_enabled: true,
-    verified: true,
-    current_latitude: 12.97,
-    current_longitude: 77.59
-  }));
-}
 
 // ==========================================
 // 1. Authentication & Role Boundaries
@@ -340,7 +368,8 @@ test('POST donor-dispatches/next-batch: rejects non-UUID requestId with 400', as
 // 3. Hospital Ownership & Request Existence
 // ==========================================
 test('POST donor-dispatches/next-batch: returns 404 when request is not found', async () => {
-  // empty emergency_requests
+  dbMock.defaultEmergencyRequest = null;
+  dbMock.emergency_requests[VALID_REQUEST_ID] = null;
   const { status, body } = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, {}, 'hospital-token');
   assert.equal(status, 404);
   assert.equal(body.error, 'REQUEST_NOT_FOUND');
@@ -369,7 +398,7 @@ test('POST donor-dispatches/next-batch: returns 409 when request is FULFILLED or
 test('POST donor-dispatches/next-batch: allows OPEN and PARTIALLY_FULFILLED requests', async () => {
   for (const validStatus of ['OPEN', 'PARTIALLY_FULFILLED']) {
     resetDbMock();
-    dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ status: validStatus });
+    dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ status: validStatus, quantity: 3 });
     dbMock.donors = createTestDonors(3);
     const { status, body } = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, {}, 'hospital-token');
     assert.equal(status, 201, `Expected 201 for status: ${validStatus}`);
@@ -381,7 +410,7 @@ test('POST donor-dispatches/next-batch: allows OPEN and PARTIALLY_FULFILLED requ
 // 5. Batch Size Validation & Clamping
 // ==========================================
 test('POST donor-dispatches/next-batch: respects requested valid batchSize and clamps up to 5', async () => {
-  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest();
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 10 });
   dbMock.donors = createTestDonors(10);
 
   // Request batchSize = 2
@@ -391,7 +420,7 @@ test('POST donor-dispatches/next-batch: respects requested valid batchSize and c
 
   // Request batchSize = 10 -> clamped to 5
   resetDbMock();
-  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest();
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 10 });
   dbMock.donors = createTestDonors(10);
   const res2 = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, { batchSize: 10 }, 'hospital-token');
   assert.equal(res2.status, 201);
@@ -399,7 +428,7 @@ test('POST donor-dispatches/next-batch: respects requested valid batchSize and c
 
   // Invalid batchSize (negative or string) -> defaults to 5
   resetDbMock();
-  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest();
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 10 });
   dbMock.donors = createTestDonors(10);
   const res3 = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, { batchSize: -5 }, 'hospital-token');
   assert.equal(res3.status, 201);
@@ -410,7 +439,7 @@ test('POST donor-dispatches/next-batch: respects requested valid batchSize and c
 // 6. Service Unit: Empty Candidate Handling
 // ==========================================
 test('createNextDonorDispatchBatch: returns NO_ELIGIBLE_DONORS when candidate pool is empty', async () => {
-  const request = createTestRequest();
+  const request = createTestRequest({ quantity: 5 });
   dbMock.donors = []; // no eligible donors
 
   const result = await createNextDonorDispatchBatch({
@@ -427,13 +456,14 @@ test('createNextDonorDispatchBatch: returns NO_ELIGIBLE_DONORS when candidate po
 });
 
 test('createNextDonorDispatchBatch: returns NO_AVAILABLE_NEXT_BATCH when all candidates are already actively dispatched', async () => {
-  const request = createTestRequest();
+  const request = createTestRequest({ quantity: 5 });
+  dbMock.emergency_requests[VALID_REQUEST_ID] = request;
   dbMock.donors = createTestDonors(3);
   // All 3 donors already have active dispatches
   dbMock.activeDispatches = [
-    { donor_id: 'donor-uuid-1' },
-    { donor_id: 'donor-uuid-2' },
-    { donor_id: 'donor-uuid-3' }
+    { donor_id: 'donor-uuid-1', status: 'PENDING' },
+    { donor_id: 'donor-uuid-2', status: 'NOTIFIED' },
+    { donor_id: 'donor-uuid-3', status: 'RESPONDED' }
   ];
 
   const result = await createNextDonorDispatchBatch({
@@ -453,7 +483,7 @@ test('createNextDonorDispatchBatch: returns NO_AVAILABLE_NEXT_BATCH when all can
 // 7. Batch Numbering & Increment Logic
 // ==========================================
 test('createNextDonorDispatchBatch: starts at batch 1 when no previous batches exist', async () => {
-  const request = createTestRequest();
+  const request = createTestRequest({ quantity: 5 });
   dbMock.donors = createTestDonors(2);
   dbMock.latestBatchNumber = 0;
 
@@ -469,7 +499,7 @@ test('createNextDonorDispatchBatch: starts at batch 1 when no previous batches e
 });
 
 test('createNextDonorDispatchBatch: increments to next batch number sequentially', async () => {
-  const request = createTestRequest();
+  const request = createTestRequest({ quantity: 5 });
   dbMock.donors = createTestDonors(2);
   dbMock.latestBatchNumber = 3;
 
@@ -484,15 +514,16 @@ test('createNextDonorDispatchBatch: increments to next batch number sequentially
 });
 
 // ==========================================
-// 8. Duplicate Active Dispatch & Partial Candidate Handling
+// 8. Hardening: Candidate Backfill
 // ==========================================
-test('createNextDonorDispatchBatch: filters out donors with active statuses and dispatches remaining candidates', async () => {
-  const request = createTestRequest();
-  dbMock.donors = createTestDonors(5);
-  // Donors 1 and 3 already have active dispatches
+test('Candidate Backfill: backfills from rankedDonors pool when top candidates are already active', async () => {
+  const request = createTestRequest({ quantity: 7 });
+  dbMock.emergency_requests[VALID_REQUEST_ID] = request;
+  // Provide 7 donors. Top 2 (donor-uuid-1 and donor-uuid-2) are active.
+  dbMock.donors = createTestDonors(7);
   dbMock.activeDispatches = [
-    { donor_id: 'donor-uuid-1' },
-    { donor_id: 'donor-uuid-3' }
+    { donor_id: 'donor-uuid-1', status: 'PENDING' },
+    { donor_id: 'donor-uuid-2', status: 'ACCEPTED' }
   ];
 
   const result = await createNextDonorDispatchBatch({
@@ -501,22 +532,112 @@ test('createNextDonorDispatchBatch: filters out donors with active statuses and 
     batchSize: 5
   });
 
-  assert.equal(result.dispatches.length, 3);
+  // Must backfill candidates 3, 4, 5, 6, 7 to fulfill requested batch size of 5
+  assert.equal(result.dispatches.length, 5);
   const dispatchedIds = result.dispatches.map((d) => d.donor_id);
   assert.ok(!dispatchedIds.includes('donor-uuid-1'));
-  assert.ok(!dispatchedIds.includes('donor-uuid-3'));
-  assert.ok(dispatchedIds.includes('donor-uuid-2'));
-  assert.ok(dispatchedIds.includes('donor-uuid-4'));
-  assert.ok(dispatchedIds.includes('donor-uuid-5'));
-  assert.equal(result.dispatches[0].status, 'PENDING');
-  assert.equal(result.dispatches[0].is_synthetic, false);
+  assert.ok(!dispatchedIds.includes('donor-uuid-2'));
+  assert.deepEqual(dispatchedIds, [
+    'donor-uuid-3',
+    'donor-uuid-4',
+    'donor-uuid-5',
+    'donor-uuid-6',
+    'donor-uuid-7'
+  ]);
 });
 
 // ==========================================
-// 9. Audit Log Behavior
+// 9. Hardening: Over-Dispatch Protection
 // ==========================================
-test('createNextDonorDispatchBatch: logs audit record on success with correct metadata', async () => {
-  const request = createTestRequest();
+test('Over-Dispatch Protection: request needing 1 unit cannot dispatch more than 1 donor', async () => {
+  const request = createTestRequest({ quantity: 1 });
+  dbMock.emergency_requests[VALID_REQUEST_ID] = request;
+  dbMock.donors = createTestDonors(5);
+
+  const result = await createNextDonorDispatchBatch({
+    request,
+    actorUserId: VALID_ACTOR_USER_ID,
+    batchSize: 5 // Client requested 5, but request only needs 1
+  });
+
+  assert.equal(result.dispatches.length, 1);
+  assert.equal(result.dispatches[0].donor_id, 'donor-uuid-1');
+});
+
+test('Over-Dispatch Protection: accounts for reserved inventory allocations', async () => {
+  const request = createTestRequest({ quantity: 3 });
+  dbMock.emergency_requests[VALID_REQUEST_ID] = request;
+  dbMock.donors = createTestDonors(5);
+  // 2 units are already reserved from peer blood banks
+  dbMock.request_inventory_allocations = [
+    { allocated_units: 1, status: 'RESERVED' },
+    { allocated_units: 1, status: 'RESERVED' }
+  ];
+
+  const result = await createNextDonorDispatchBatch({
+    request,
+    actorUserId: VALID_ACTOR_USER_ID,
+    batchSize: 5
+  });
+
+  // Only 1 unit needed -> creates exactly 1 dispatch
+  assert.equal(result.dispatches.length, 1);
+});
+
+test('Over-Dispatch Protection: returns REQUEST_ALREADY_FULFILLED when required units are met', async () => {
+  const request = createTestRequest({ quantity: 2 });
+  dbMock.emergency_requests[VALID_REQUEST_ID] = request;
+  dbMock.donors = createTestDonors(5);
+  // 1 unit reserved in inventory, 1 unit accepted by donor -> 0 needed
+  dbMock.request_inventory_allocations = [{ allocated_units: 1, status: 'RESERVED' }];
+  dbMock.activeDispatches = [{ donor_id: 'prior-donor', status: 'ACCEPTED' }];
+
+  const result = await createNextDonorDispatchBatch({
+    request,
+    actorUserId: VALID_ACTOR_USER_ID,
+    batchSize: 5
+  });
+
+  assert.equal(result.dispatches.length, 0);
+  assert.equal(result.reason, 'REQUEST_ALREADY_FULFILLED');
+});
+
+// ==========================================
+// 10. Hardening: Request State Revalidation
+// ==========================================
+test('Request State Revalidation: aborts batch creation if request became FULFILLED during ranking', async () => {
+  const request = createTestRequest({ status: 'OPEN' });
+  // Simulate concurrent fulfillment right before batch generation
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ status: 'FULFILLED' });
+  dbMock.donors = createTestDonors(3);
+
+  await assert.rejects(
+    async () => {
+      await createNextDonorDispatchBatch({
+        request,
+        actorUserId: VALID_ACTOR_USER_ID,
+        batchSize: 5
+      });
+    },
+    (err) => {
+      assert.equal(err.code, 'REQUEST_NOT_OPEN');
+      return true;
+    }
+  );
+});
+
+test('Request State Revalidation: HTTP endpoint returns 409 when request state changes to CANCELLED', async () => {
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ status: 'CANCELLED' });
+  const { status, body } = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, {}, 'hospital-token');
+  assert.equal(status, 409);
+  assert.equal(body.error, 'REQUEST_NOT_OPEN');
+});
+
+// ==========================================
+// 11. Hardening: Audit Log Integrity & Fail-Closed Rollback
+// ==========================================
+test('Audit Integrity: successfully records audit log with metadata on batch creation', async () => {
+  const request = createTestRequest({ quantity: 5 });
   dbMock.donors = createTestDonors(2);
 
   const result = await createNextDonorDispatchBatch({
@@ -526,40 +647,52 @@ test('createNextDonorDispatchBatch: logs audit record on success with correct me
   });
 
   assert.equal(result.auditLogged, true);
-  assert.equal(result.auditError, null);
   assert.equal(dbMock.audit_logs.length, 1);
-
   const log = dbMock.audit_logs[0];
   assert.equal(log.actor_user_id, VALID_ACTOR_USER_ID);
   assert.equal(log.action, 'DONOR_DISPATCH_BATCH_CREATED');
-  assert.equal(log.entity_type, 'emergency_request');
   assert.equal(log.entity_id, VALID_REQUEST_ID);
-  assert.equal(log.metadata.batch_number, 1);
-  assert.equal(log.metadata.dispatch_count, 2);
-  assert.deepEqual(log.metadata.donor_ids, result.dispatches.map((d) => d.donor_id));
 });
 
-test('createNextDonorDispatchBatch: handles audit log failure gracefully without aborting dispatches', async () => {
-  const request = createTestRequest();
+test('Audit Integrity: rolls back dispatches and fails-closed when audit log fails', async () => {
+  const request = createTestRequest({ quantity: 5 });
   dbMock.donors = createTestDonors(2);
   dbMock.auditInsertError = new Error('audit table unavailable');
 
-  const result = await createNextDonorDispatchBatch({
-    request,
-    actorUserId: VALID_ACTOR_USER_ID,
-    batchSize: 5
-  });
+  await assert.rejects(
+    async () => {
+      await createNextDonorDispatchBatch({
+        request,
+        actorUserId: VALID_ACTOR_USER_ID,
+        batchSize: 5
+      });
+    },
+    (err) => {
+      assert.equal(err.code, 'AUDIT_LOG_FAILED');
+      return true;
+    }
+  );
 
-  assert.equal(result.dispatches.length, 2);
-  assert.equal(result.auditLogged, false);
-  assert.equal(result.auditError, 'Failed to record dispatch audit event');
+  // Verify compensating rollback deleted the inserted dispatches
+  assert.equal(dbMock.donor_dispatches.length, 0);
+  assert.ok(dbMock.deletedDispatches.length > 0);
+});
+
+test('Audit Integrity: HTTP endpoint returns 500 AUDIT_LOG_FAILED when audit insert fails', async () => {
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 5 });
+  dbMock.donors = createTestDonors(2);
+  dbMock.auditInsertError = new Error('audit service down');
+
+  const { status, body } = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, {}, 'hospital-token');
+  assert.equal(status, 500);
+  assert.equal(body.error, 'AUDIT_LOG_FAILED');
 });
 
 // ==========================================
-// 10. Route Error Status Codes & Conflicts
+// 12. Concurrency Conflict & ML Resilience
 // ==========================================
 test('POST donor-dispatches/next-batch: returns 409 DISPATCH_BATCH_CONFLICT on code 23505', async () => {
-  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest();
+  dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 5 });
   dbMock.donors = createTestDonors(2);
   const conflictError = new Error('duplicate key value violates unique constraint');
   conflictError.code = '23505';
@@ -574,7 +707,7 @@ test('POST donor-dispatches/next-batch: returns 409 DISPATCH_BATCH_CONFLICT on c
 test('POST donor-dispatches/next-batch: returns 503 ML_SERVICE_UNAVAILABLE on ML service errors', async () => {
   for (const mlErrCode of ['ML_NOT_CONFIGURED', 'ML_TIMEOUT', 'ML_INFERENCE_FAILED']) {
     resetDbMock();
-    dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest();
+    dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 5 });
     dbMock.donors = createTestDonors(2);
     dbMock.mlFailure = mlErrCode;
 

@@ -69,6 +69,18 @@ router.post('/requests/:requestId/donor-dispatches/next-batch', requireAuth, req
     });
   } catch (error) {
     console.error('Donor dispatch batch creation failed:', error);
+    if (error.code === 'REQUEST_NOT_OPEN') {
+      return res.status(409).json({
+        error: 'REQUEST_NOT_OPEN',
+        message: 'Donor dispatch is only available for open or partially fulfilled requests'
+      });
+    }
+    if (error.code === 'AUDIT_LOG_FAILED') {
+      return res.status(500).json({
+        error: 'AUDIT_LOG_FAILED',
+        message: 'Donor dispatch failed because the audit log could not be recorded'
+      });
+    }
     if (['ML_NOT_CONFIGURED', 'ML_TIMEOUT', 'ML_INFERENCE_FAILED'].includes(error.code)) {
       return res.status(503).json({
         error: 'ML_SERVICE_UNAVAILABLE',
