@@ -59,6 +59,7 @@ router.post('/requests/:requestId/donor-dispatches/next-batch', requireAuth, req
       requestedUnits: request.quantity,
       urgency: request.urgency,
       modelVersion: result.modelVersion,
+      rankingSource: result.rankingSource ?? (result.modelVersion ? 'ML' : 'DETERMINISTIC_FALLBACK'),
       candidateCount: result.candidateCount,
       batchNumber: result.batchNumber,
       batchSize: result.dispatches.length,

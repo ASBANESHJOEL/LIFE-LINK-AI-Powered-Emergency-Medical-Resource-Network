@@ -704,7 +704,7 @@ test('POST donor-dispatches/next-batch: returns 409 DISPATCH_BATCH_CONFLICT on c
   assert.equal(body.message, 'A donor dispatch changed concurrently; retry the batch request');
 });
 
-test('POST donor-dispatches/next-batch: returns 503 ML_SERVICE_UNAVAILABLE on ML service errors', async () => {
+test('POST donor-dispatches/next-batch: gracefully falls back to deterministic ranking on ML service errors', async () => {
   for (const mlErrCode of ['ML_NOT_CONFIGURED', 'ML_TIMEOUT', 'ML_INFERENCE_FAILED']) {
     resetDbMock();
     dbMock.emergency_requests[VALID_REQUEST_ID] = createTestRequest({ quantity: 5 });
@@ -712,7 +712,10 @@ test('POST donor-dispatches/next-batch: returns 503 ML_SERVICE_UNAVAILABLE on ML
     dbMock.mlFailure = mlErrCode;
 
     const { status, body } = await apiPost(`/api/requests/${VALID_REQUEST_ID}/donor-dispatches/next-batch`, {}, 'hospital-token');
-    assert.equal(status, 503, `Expected 503 for ML error: ${mlErrCode}`);
-    assert.equal(body.error, 'ML_SERVICE_UNAVAILABLE');
+    assert.equal(status, 201, `Expected 201 for ML fallback on: ${mlErrCode}`);
+    assert.equal(body.modelVersion, null);
+    assert.equal(body.rankingSource, 'DETERMINISTIC_FALLBACK');
+    assert.equal(body.batchSize, 2);
+    assert.equal(body.dispatches.length, 2);
   }
 });

@@ -104,6 +104,7 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
   if (!ranking.rankedDonors?.length) {
     return {
       modelVersion: ranking.modelVersion,
+      rankingSource: ranking.rankingSource,
       candidateCount: ranking.candidateCount,
       batchNumber: null,
       dispatches: [],
@@ -126,6 +127,7 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
   if (!availableCandidates.length) {
     return {
       modelVersion: ranking.modelVersion,
+      rankingSource: ranking.rankingSource,
       candidateCount: ranking.candidateCount,
       batchNumber: null,
       dispatches: [],
@@ -150,6 +152,7 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
       if (!rpcError && rpcData?.length) {
         return {
           modelVersion: ranking.modelVersion,
+          rankingSource: ranking.rankingSource,
           candidateCount: ranking.candidateCount,
           batchNumber: rpcData[0]?.batch_number,
           dispatches: rpcData,
@@ -227,6 +230,7 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
 
   return {
     modelVersion: ranking.modelVersion,
+    rankingSource: ranking.rankingSource,
     candidateCount: ranking.candidateCount,
     batchNumber,
     dispatches,

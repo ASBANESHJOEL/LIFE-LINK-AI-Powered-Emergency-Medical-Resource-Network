@@ -76,6 +76,8 @@ async function getDonorHistory(donorIds, requestId) {
   return history;
 }
 
+const ML_FALLBACK_CODES = new Set(['ML_NOT_CONFIGURED', 'ML_TIMEOUT', 'ML_INFERENCE_FAILED']);
+
 async function predict(features) {
   const mlApiUrl = getMlApiUrl();
   if (!mlApiUrl) {
@@ -105,7 +107,12 @@ async function predict(features) {
       err.code = 'ML_TIMEOUT';
       throw err;
     }
-    throw error;
+    if (error.code === 'ML_NOT_CONFIGURED' || error.code === 'ML_TIMEOUT' || error.code === 'ML_INFERENCE_FAILED') {
+      throw error;
+    }
+    const err = new Error('ML inference request failed');
+    err.code = 'ML_INFERENCE_FAILED';
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
@@ -127,6 +134,57 @@ async function mapWithConcurrency(items, worker, concurrency = INFERENCE_CONCURR
   return results;
 }
 
+function rankDonorsDeterministically(donors, history) {
+  const ranked = donors.map((donor) => {
+    const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
+    const responseRate = donorHistory.historyCount > 0
+      ? donorHistory.positiveResponses / donorHistory.historyCount
+      : 0;
+    const metrics = {
+      responseRate,
+      verified: donor.verified ? 1 : 0,
+      positiveResponses: donorHistory.positiveResponses,
+      daysSinceLastDonation: daysSince(donor.lastDonationDate),
+      donorId: donor.donorId
+    };
+
+    return {
+      ...donor,
+      responseProbability: Number(responseRate.toFixed(4)),
+      predictedResponse: responseRate >= 0.5 ? 1 : 0,
+      modelVersion: null,
+      _metrics: metrics
+    };
+  });
+
+  ranked.sort((a, b) => {
+    // 1. Higher historical response rate first
+    if (b._metrics.responseRate !== a._metrics.responseRate) {
+      return b._metrics.responseRate - a._metrics.responseRate;
+    }
+    // 2. Verified donor first
+    if (b._metrics.verified !== a._metrics.verified) {
+      return b._metrics.verified - a._metrics.verified;
+    }
+    // 3. Greater historical positive responses next
+    if (b._metrics.positiveResponses !== a._metrics.positiveResponses) {
+      return b._metrics.positiveResponses - a._metrics.positiveResponses;
+    }
+    // 4. Longer/valid donation-history signal as currently available
+    if (b._metrics.daysSinceLastDonation !== a._metrics.daysSinceLastDonation) {
+      return b._metrics.daysSinceLastDonation - a._metrics.daysSinceLastDonation;
+    }
+    // 5. Donor ID ascending as the final stable tie-breaker
+    return a.donorId.localeCompare(b.donorId);
+  });
+
+  for (const item of ranked) {
+    delete item._metrics;
+  }
+
+  return ranked;
+}
+
 export async function rankEligibleDonors({ request, limit = 500, batchSize = DEFAULT_BATCH_SIZE }) {
   const donors = await findEligibleDonors({
     requestId: request.id,
@@ -136,30 +194,48 @@ export async function rankEligibleDonors({ request, limit = 500, batchSize = DEF
   });
 
   if (!donors.length) {
-    return { modelVersion: null, candidateCount: 0, rankedDonors: [], nextBatch: [] };
+    return { modelVersion: null, rankingSource: 'ML', candidateCount: 0, rankedDonors: [], nextBatch: [] };
   }
 
   const history = await getDonorHistory(donors.map((donor) => donor.donorId), request.id);
-  const ranked = await mapWithConcurrency(donors, async (donor) => {
-    const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
-    const features = buildFeatureVector({ donor, request, ...donorHistory });
-    const prediction = await predict(features);
-    return {
-      ...donor,
-      responseProbability: prediction.probability,
-      predictedResponse: prediction.prediction,
-      modelVersion: prediction.model_version
-    };
-  });
 
-  ranked.sort((a, b) => {
-    if (b.responseProbability !== a.responseProbability) return b.responseProbability - a.responseProbability;
-    return a.donorId.localeCompare(b.donorId);
-  });
+  let ranked;
+  let rankingSource = 'ML';
+  let modelVersion = null;
+
+  try {
+    ranked = await mapWithConcurrency(donors, async (donor) => {
+      const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
+      const features = buildFeatureVector({ donor, request, ...donorHistory });
+      const prediction = await predict(features);
+      return {
+        ...donor,
+        responseProbability: prediction.probability,
+        predictedResponse: prediction.prediction,
+        modelVersion: prediction.model_version
+      };
+    });
+
+    ranked.sort((a, b) => {
+      if (b.responseProbability !== a.responseProbability) return b.responseProbability - a.responseProbability;
+      return a.donorId.localeCompare(b.donorId);
+    });
+
+    modelVersion = ranked[0]?.modelVersion || null;
+  } catch (error) {
+    if (!ML_FALLBACK_CODES.has(error.code)) {
+      throw error;
+    }
+
+    rankingSource = 'DETERMINISTIC_FALLBACK';
+    modelVersion = null;
+    ranked = rankDonorsDeterministically(donors, history);
+  }
 
   const safeBatchSize = Number.isInteger(batchSize) && batchSize > 0 ? Math.min(batchSize, 5) : DEFAULT_BATCH_SIZE;
   return {
-    modelVersion: ranked[0]?.modelVersion || null,
+    modelVersion,
+    rankingSource,
     candidateCount: ranked.length,
     rankedDonors: ranked,
     nextBatch: ranked.slice(0, safeBatchSize)
