@@ -73,3 +73,12 @@ test('protected peer-transfer acceptance endpoint rejects unauthenticated access
   assert.equal(response.status, 401);
   assert.equal(body.error, 'UNAUTHORIZED');
 });
+
+test('protected donor-dispatch next-batch endpoint rejects unauthenticated access', async () => {
+  const { response, body } = await request('/api/requests/00000000-0000-4000-8000-000000000000/donor-dispatches/next-batch', {
+    method: 'POST'
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error, 'UNAUTHORIZED');
+});
