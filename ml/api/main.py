@@ -130,9 +130,9 @@ class PredictionResponse(BaseModel):
 
 
 # Global Model Holder
-production_model: Optional[XGBClassifier] = None
+production_model: Optional[Any] = None
 model_metadata: Dict[str, Any] = {}
-loaded_model_type: str = "xgboost_baseline"
+loaded_model_type: str = "donor_response_logistic_v1"
 
 
 def load_inference_model():
@@ -140,30 +140,38 @@ def load_inference_model():
     
     models_dir = os.path.join(ml_dir, "models")
     meta_path = os.path.join(models_dir, "model_metadata.json")
+    prod_joblib_file = os.path.join(models_dir, "donor_response_logistic_v1.joblib")
 
-    # Determine selected model
     if os.path.exists(meta_path):
         with open(meta_path, "r") as f:
             model_metadata = json.load(f)
-        selected_key = model_metadata.get("selected_model", "xgboost_baseline")
-        loaded_model_type = selected_key
-        model_file = os.path.join(models_dir, f"donor_response_{selected_key}.json")
-    else:
-        model_file = os.path.join(models_dir, "donor_response_xgb_hem.json")
-        if not os.path.exists(model_file):
-            model_file = os.path.join(models_dir, "donor_response_xgb_baseline.json")
-        loaded_model_type = "xgboost_hem" if "hem" in model_file else "xgboost_baseline"
+
+    # 1. Prefer Production Logistic Regression V1 Joblib artifact
+    if os.path.exists(prod_joblib_file):
+        import joblib
+        print(f"[API] Loading production V1 model from: {prod_joblib_file}")
+        production_model = joblib.load(prod_joblib_file)
+        loaded_model_type = model_metadata.get("production_model_marker", "donor_response_logistic_v1")
+        print(f"[API] Successfully loaded {loaded_model_type} into memory.")
+        return
+
+    # 2. Fallback to XGBoost research model if joblib is absent
+    selected_key = model_metadata.get("selected_model", "xgb_baseline")
+    model_file = os.path.join(models_dir, f"donor_response_{selected_key}.json")
+    if not os.path.exists(model_file):
+        model_file = os.path.join(models_dir, "donor_response_xgb_baseline.json")
 
     if not os.path.exists(model_file):
-        print(f"[API] Warning: Model file {model_file} not found. Running training pipeline...")
-        from scripts.evaluate import run_evaluation_pipeline
-        run_evaluation_pipeline()
+        print(f"[API] Warning: Model artifacts not found. Running training pipeline...")
+        from scripts.train_production import train_and_package_production_model
+        train_and_package_production_model()
         return load_inference_model()
 
-    print(f"[API] Loading model from: {model_file}")
+    print(f"[API] Fallback loading model from: {model_file}")
     model = XGBClassifier()
     model.load_model(model_file)
     production_model = model
+    loaded_model_type = selected_key
     print(f"[API] Successfully loaded {loaded_model_type} into memory.")
 
 

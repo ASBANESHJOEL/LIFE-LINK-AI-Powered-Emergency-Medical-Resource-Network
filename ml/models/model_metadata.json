@@ -1,12 +1,26 @@
 {
-  "model_version": "1.0.0",
-  "model_name": "LIFE-LINK Donor Dispatch Response Predictor",
-  "created_at": "2026-09-15T14:05:16.117980",
-  "selected_model": "xgb_baseline",
-  "model_files": {
-    "baseline": "ml/models/donor_response_xgb_baseline.json",
-    "hem": "ml/models/donor_response_xgb_hem.json",
-    "production_selected": "ml/models/donor_response_xgb_baseline.json"
+  "model_name": "donor_response",
+  "model_version": "v1",
+  "production_model_marker": "donor_response_logistic_v1",
+  "algorithm": "logistic_regression",
+  "pipeline_structure": [
+    "StandardScaler",
+    "LogisticRegression"
+  ],
+  "creation_timestamp": "2026-09-17T08:52:38.268198",
+  "python_version": "3.9.0",
+  "sklearn_version": "1.6.1",
+  "joblib_version": "1.5.3",
+  "model_artifact": {
+    "path": "ml/models/donor_response_logistic_v1.joblib",
+    "size_bytes": 1716,
+    "format": "joblib"
+  },
+  "target_definition": {
+    "name": "positive_response",
+    "description": "1 if donor dispatch resulted in ACCEPTED or COMPLETED outcome, 0 if DECLINED, NO_RESPONSE, MISSED, EXPIRED, CANCELLED",
+    "positive_label": 1,
+    "negative_label": 0
   },
   "feature_names": [
     "is_exact_blood_match",
@@ -29,280 +43,211 @@
     "is_resource_blood"
   ],
   "feature_count": 18,
-  "target_definition": {
-    "name": "positive_response",
-    "description": "1 if donor dispatch resulted in ACCEPTED or COMPLETED outcome, 0 if DECLINED, NO_RESPONSE, MISSED, EXPIRED, CANCELLED",
-    "positive_label": 1,
-    "negative_label": 0
+  "feature_coefficients": {
+    "is_exact_blood_match": 0.368303,
+    "is_blood_compatible": 0.438401,
+    "is_universal_donor": 0.02265,
+    "donor_is_verified": 0.080564,
+    "donor_is_eligible": 0.290049,
+    "donor_is_available": 0.438868,
+    "donor_response_rate": -0.011539,
+    "donor_history_count": -0.242791,
+    "donor_positive_responses": 0.255954,
+    "days_since_last_donation": -0.014247,
+    "dispatch_hour": 0.062902,
+    "dispatch_day_of_week": 0.014015,
+    "is_weekend": -0.094348,
+    "is_night_dispatch": -0.298951,
+    "is_business_hours": 0.1514,
+    "requested_quantity": -0.033264,
+    "urgency_level": 0.121726,
+    "is_resource_blood": 0.108918
   },
-  "dataset_statistics": {
-    "total_samples": 3621,
-    "train_samples": 2486,
-    "val_samples": 582,
-    "test_samples": 553,
-    "positive_samples": 2654,
-    "negative_samples": 967,
-    "positive_percentage": 73.29,
-    "negative_percentage": 26.71
+  "intercept": 1.247782,
+  "scaler_information": {
+    "mean": [
+      0.299678,
+      0.577233,
+      0.051086,
+      0.921561,
+      0.85358,
+      0.810941,
+      0.652862,
+      3.950121,
+      2.948914,
+      255.316171,
+      11.699517,
+      2.927192,
+      0.281979,
+      0.340306,
+      0.257442,
+      3.055511,
+      1.660097,
+      0.707562
+    ],
+    "scale": [
+      0.458117,
+      0.493999,
+      0.220173,
+      0.268862,
+      0.353527,
+      0.391555,
+      0.362815,
+      3.02921,
+      2.507472,
+      131.474299,
+      7.032351,
+      2.006007,
+      0.449963,
+      0.473812,
+      0.437225,
+      1.585374,
+      0.928624,
+      0.454882
+    ],
+    "var": [
+      0.209871,
+      0.244035,
+      0.048476,
+      0.072287,
+      0.124981,
+      0.153316,
+      0.131635,
+      9.176112,
+      6.287414,
+      17285.491348,
+      49.453958,
+      4.024063,
+      0.202467,
+      0.224498,
+      0.191165,
+      2.513411,
+      0.862342,
+      0.206918
+    ]
   },
-  "split_methodology": {
-    "type": "Group-Aware Split (GroupShuffleSplit)",
-    "group_column": "donor_id",
-    "train_ratio": 0.7,
-    "val_ratio": 0.15,
-    "test_ratio": 0.15,
-    "leakage_safeguard": "Strict zero-donor-overlap across train, val, and test partitions"
-  },
-  "xgboost_parameters": {
-    "n_estimators": 300,
-    "max_depth": 4,
-    "learning_rate": 0.03,
-    "min_child_weight": 3,
-    "gamma": 0.3,
-    "subsample": 0.8,
-    "colsample_bytree": 0.8,
-    "reg_alpha": 0.1,
-    "reg_lambda": 1.0,
-    "objective": "binary:logistic",
-    "eval_metric": "logloss",
+  "hyperparameters": {
+    "penalty": "l2",
+    "C": 1.0,
+    "solver": "lbfgs",
+    "max_iter": 1000,
     "random_state": 42
   },
-  "hem_strategy": {
-    "method": "Dual-Signal Hard Example Mining",
-    "signals": {
-      "misclassification": "y_pred != y_true",
-      "uncertainty": "abs(p - 0.5) < 0.15"
-    },
-    "sample_weighting_schedule": {
-      "normal": 1.0,
-      "uncertain": 2.0,
-      "misclassified": 2.0,
-      "misclassified_and_uncertain": 3.0
-    },
-    "mined_statistics": {
-      "total_samples": 2486,
-      "misclassified_count": 355,
-      "uncertain_count": 487,
-      "very_hard_count": 201,
-      "easy_count": 1845,
-      "uncertainty_threshold": 0.15,
-      "weight_distribution": {
-        "weight_1_0": 1845,
-        "weight_2_0": 440,
-        "weight_3_0": 201
-      }
-    }
+  "training_dataset": {
+    "source": "ml/data/processed/train.csv",
+    "total_records": 3621,
+    "training_row_count": 2486,
+    "training_donor_count": 313,
+    "validation_row_count": 582,
+    "validation_donor_count": 68,
+    "test_row_count": 553,
+    "test_donor_count": 68,
+    "positive_prevalence": 73.57
   },
-  "test_metrics": {
-    "baseline": {
-      "accuracy": 0.7378,
-      "precision": 0.7702,
-      "recall": 0.898,
-      "f1": 0.8292,
-      "roc_auc": 0.7467,
+  "validation_methodology": {
+    "strategy": "Donor-Group-Aware Partitioning (GroupShuffleSplit on donor_id)",
+    "leakage_safeguard": "Strict zero-donor-overlap across train, validation, and holdout test partitions",
+    "train_ratio": 0.7,
+    "val_ratio": 0.15,
+    "test_ratio": 0.15
+  },
+  "split_evaluation_metrics": {
+    "train": {
+      "accuracy": 0.7655,
+      "precision": 0.7853,
+      "recall": 0.9377,
+      "f1": 0.8547,
+      "roc_auc": 0.7582,
+      "pr_auc": 0.8846,
+      "confusion_matrix": [
+        [
+          188,
+          469
+        ],
+        [
+          114,
+          1715
+        ]
+      ]
+    },
+    "validation": {
+      "accuracy": 0.7612,
+      "precision": 0.7964,
+      "recall": 0.9122,
+      "f1": 0.8504,
+      "roc_auc": 0.7415,
+      "pr_auc": 0.8848,
+      "confusion_matrix": [
+        [
+          48,
+          101
+        ],
+        [
+          38,
+          395
+        ]
+      ]
+    },
+    "test": {
+      "accuracy": 0.7541,
+      "precision": 0.7747,
+      "recall": 0.9209,
+      "f1": 0.8415,
+      "roc_auc": 0.7738,
+      "pr_auc": 0.8898,
       "confusion_matrix": [
         [
           56,
           105
         ],
         [
-          40,
-          352
+          31,
+          361
         ]
       ]
-    },
-    "hem": {
-      "accuracy": 0.698,
-      "precision": 0.7635,
-      "recall": 0.8316,
-      "f1": 0.7961,
-      "roc_auc": 0.7026,
-      "confusion_matrix": [
-        [
-          60,
-          101
-        ],
-        [
-          66,
-          326
-        ]
-      ]
-    },
-    "absolute_improvement": {
-      "accuracy": -0.0398,
-      "precision": -0.0067,
-      "recall": -0.0664,
-      "f1": -0.0331,
-      "roc_auc": -0.0441
-    },
-    "percentage_improvement": {
-      "accuracy": -5.39,
-      "precision": -0.87,
-      "recall": -7.39,
-      "f1": -3.99,
-      "roc_auc": -5.91
     }
   },
-  "overfitting_analysis": {
-    "baseline": {
-      "train_accuracy": 0.8238,
-      "val_accuracy": 0.7509,
-      "test_accuracy": 0.7378,
-      "train_test_acc_gap": 0.086,
-      "train_test_f1_gap": 0.06,
-      "train_test_roc_auc_gap": 0.1277
+  "fresh_holdout_evaluation_results": {
+    "accuracy": 0.7782,
+    "precision": 0.7981,
+    "recall": 0.9401,
+    "f1": 0.8633,
+    "roc_auc": 0.7419,
+    "pr_auc": 0.8813
+  },
+  "candidate_model_comparisons": {
+    "logistic_regression_v1": {
+      "accuracy": 0.7782,
+      "precision": 0.7981,
+      "recall": 0.9401,
+      "f1": 0.8633,
+      "roc_auc": 0.7419,
+      "pr_auc": 0.8813
     },
-    "hem": {
-      "train_accuracy": 0.9155,
-      "val_accuracy": 0.701,
-      "test_accuracy": 0.698,
-      "train_test_acc_gap": 0.2175,
-      "train_test_f1_gap": 0.1482,
-      "train_test_roc_auc_gap": 0.2462
+    "xgboost": {
+      "accuracy": 0.7643,
+      "f1": 0.8539,
+      "roc_auc": 0.7319
+    },
+    "catboost": {
+      "accuracy": 0.7629,
+      "f1": 0.8519,
+      "roc_auc": 0.7214
+    },
+    "extratrees": {
+      "accuracy": 0.7252,
+      "f1": 0.8264,
+      "roc_auc": 0.6792
+    },
+    "ensemble_logistic_xgboost": {
+      "status": "research_only",
+      "description": "Marginal improvement over Logistic Regression; preserved as research experiment."
     }
   },
-  "feature_importance_ranking": [
-    {
-      "feature": "is_exact_blood_match",
-      "gain": 9.9588,
-      "weight": 88
-    },
-    {
-      "feature": "is_blood_compatible",
-      "gain": 7.9058,
-      "weight": 113
-    },
-    {
-      "feature": "donor_is_available",
-      "gain": 6.0444,
-      "weight": 115
-    },
-    {
-      "feature": "donor_is_eligible",
-      "gain": 4.9719,
-      "weight": 86
-    },
-    {
-      "feature": "donor_is_verified",
-      "gain": 4.4804,
-      "weight": 62
-    },
-    {
-      "feature": "dispatch_hour",
-      "gain": 4.2968,
-      "weight": 606
-    },
-    {
-      "feature": "is_business_hours",
-      "gain": 4.2114,
-      "weight": 64
-    },
-    {
-      "feature": "days_since_last_donation",
-      "gain": 4.0258,
-      "weight": 947
-    },
-    {
-      "feature": "requested_quantity",
-      "gain": 3.986,
-      "weight": 293
-    },
-    {
-      "feature": "donor_response_rate",
-      "gain": 3.8936,
-      "weight": 379
-    },
-    {
-      "feature": "donor_positive_responses",
-      "gain": 3.8407,
-      "weight": 243
-    },
-    {
-      "feature": "urgency_level",
-      "gain": 3.8316,
-      "weight": 216
-    },
-    {
-      "feature": "is_resource_blood",
-      "gain": 3.8134,
-      "weight": 87
-    },
-    {
-      "feature": "dispatch_day_of_week",
-      "gain": 3.8133,
-      "weight": 338
-    },
-    {
-      "feature": "is_universal_donor",
-      "gain": 3.6697,
-      "weight": 45
-    },
-    {
-      "feature": "donor_history_count",
-      "gain": 3.5993,
-      "weight": 398
-    },
-    {
-      "feature": "is_night_dispatch",
-      "gain": 3.4242,
-      "weight": 46
-    },
-    {
-      "feature": "is_weekend",
-      "gain": 3.3513,
-      "weight": 23
-    }
-  ],
-  "top_10_features": [
-    {
-      "feature": "is_exact_blood_match",
-      "gain": 9.9588,
-      "weight": 88
-    },
-    {
-      "feature": "is_blood_compatible",
-      "gain": 7.9058,
-      "weight": 113
-    },
-    {
-      "feature": "donor_is_available",
-      "gain": 6.0444,
-      "weight": 115
-    },
-    {
-      "feature": "donor_is_eligible",
-      "gain": 4.9719,
-      "weight": 86
-    },
-    {
-      "feature": "donor_is_verified",
-      "gain": 4.4804,
-      "weight": 62
-    },
-    {
-      "feature": "dispatch_hour",
-      "gain": 4.2968,
-      "weight": 606
-    },
-    {
-      "feature": "is_business_hours",
-      "gain": 4.2114,
-      "weight": 64
-    },
-    {
-      "feature": "days_since_last_donation",
-      "gain": 4.0258,
-      "weight": 947
-    },
-    {
-      "feature": "requested_quantity",
-      "gain": 3.986,
-      "weight": 293
-    },
-    {
-      "feature": "donor_response_rate",
-      "gain": 3.8936,
-      "weight": 379
-    }
-  ]
+  "research_artifacts": {
+    "xgboost_baseline": "ml/models/donor_response_xgb_baseline.json",
+    "xgboost_hem": "ml/models/donor_response_xgb_hem.json",
+    "feature_ablation_report": "ml/models/feature_ablation_final_report.json",
+    "scientific_improvement_report": "ml/models/scientific_improvement_report.json"
+  }
 }
