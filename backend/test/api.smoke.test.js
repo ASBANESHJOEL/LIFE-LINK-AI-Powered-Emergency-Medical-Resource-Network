@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import app from '../src/index.js';
+import app from '../src/app.js';
 
 const server = app.listen(0);
 const baseUrl = await new Promise((resolve) => {
