@@ -161,6 +161,9 @@ beforeEach(() => {
         isDelete = true;
         return this;
       },
+      update(updates) {
+        return this;
+      },
       maybeSingle() {
         isSingle = true;
         return this.execute();
@@ -219,6 +222,10 @@ beforeEach(() => {
 
         if (table === 'request_inventory_allocations') {
           return { data: dbMock.request_inventory_allocations || [], error: null };
+        }
+
+        if (table === 'notifications') {
+          return { data: [], error: null };
         }
 
         if (table === 'donors') {

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { rankEligibleDonors } from './donorRankingService.js';
+import { sendDispatchBatchNotifications } from './notificationService.js';
 
 const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED'];
 const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'COMPLETED'];
@@ -150,15 +151,27 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
       });
 
       if (!rpcError && rpcData?.length) {
+        let notificationOutcome = { notified: false, results: [] };
+        try {
+          notificationOutcome = await sendDispatchBatchNotifications({
+            request,
+            dispatches: rpcData,
+            actorUserId
+          });
+        } catch (notifyErr) {
+          console.error('Non-blocking notification delivery failure (RPC):', notifyErr.message || notifyErr);
+        }
+
         return {
           modelVersion: ranking.modelVersion,
           rankingSource: ranking.rankingSource,
           candidateCount: ranking.candidateCount,
           batchNumber: rpcData[0]?.batch_number,
           dispatches: rpcData,
-          notified: false,
+          notified: Boolean(notificationOutcome?.notified),
           auditLogged: true,
-          auditError: null
+          auditError: null,
+          notifications: notificationOutcome?.results || []
         };
       } else if (rpcError) {
         if (rpcError.code === '55000') {
@@ -228,14 +241,26 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
     throw err;
   }
 
+  let notificationOutcome = { notified: false, results: [] };
+  try {
+    notificationOutcome = await sendDispatchBatchNotifications({
+      request,
+      dispatches,
+      actorUserId
+    });
+  } catch (notifyErr) {
+    console.error('Non-blocking notification delivery failure (fallback):', notifyErr.message || notifyErr);
+  }
+
   return {
     modelVersion: ranking.modelVersion,
     rankingSource: ranking.rankingSource,
     candidateCount: ranking.candidateCount,
     batchNumber,
     dispatches,
-    notified: false,
+    notified: Boolean(notificationOutcome?.notified),
     auditLogged: true,
-    auditError: null
+    auditError: null,
+    notifications: notificationOutcome?.results || []
   };
 }
