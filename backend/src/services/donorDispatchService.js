@@ -2,8 +2,8 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { rankEligibleDonors } from './donorRankingService.js';
 import { sendDispatchBatchNotifications } from './notificationService.js';
 
-const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED'];
-const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'COMPLETED'];
+const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED'];
+const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'COMPLETED'];
 const MAX_BATCH_SIZE = 5;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -686,5 +686,715 @@ export async function respondToDonorDispatch({ dispatchId, donorUserId, response
     isAlreadyResponded: Boolean(resultRecord.is_already_responded),
     respondedAt: resultRecord.responded_at,
     acceptedAt: resultRecord.accepted_at
+  };
+}
+
+/**
+ * Send in-app notification to active hospital staff on tracking lifecycle milestones.
+ * Strictly sanitized: omits patient PII/PHI.
+ * Idempotent: verifies against existing notifications matching dispatch_id and event.
+ */
+async function notifyHospitalOnTrackingEvent({ requestId, dispatchId, donorId, event, title, body, metadata = {} }) {
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id, blood_group, resource_type, urgency')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqErr || !request?.hospital_id) return;
+
+  const { data: members, error: memErr } = await supabaseAdmin
+    .from('organization_members')
+    .select('user_id')
+    .eq('hospital_id', request.hospital_id)
+    .eq('organization_type', 'HOSPITAL')
+    .eq('is_active', true);
+
+  if (memErr || !members?.length) return;
+
+  for (const member of members) {
+    if (!member.user_id) continue;
+    try {
+      const { data: existing } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', member.user_id)
+        .eq('request_id', requestId)
+        .contains('metadata', { dispatch_id: dispatchId, event })
+        .maybeSingle();
+
+      if (existing) continue;
+
+      await supabaseAdmin.from('notifications').insert({
+        user_id: member.user_id,
+        donor_dispatch_id: null, // Avoid colliding with donor dispatch unique partial index
+        request_id: requestId,
+        channel: 'IN_APP',
+        status: 'DELIVERED',
+        title,
+        body,
+        metadata: {
+          dispatch_id: dispatchId,
+          donor_id: donorId,
+          event,
+          ...metadata
+        },
+        sent_at: new Date().toISOString()
+      });
+    } catch (insertErr) {
+      console.error(`Failed to notify hospital user ${member.user_id}:`, insertErr.message || insertErr);
+    }
+  }
+}
+
+/**
+ * Start donor tracking: transitions ACCEPTED -> EN_ROUTE.
+ * Strictly authenticated to the donor owning the dispatch.
+ */
+export async function startDonorTracking({ dispatchId, donorUserId }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  // 1. Resolve donor profile
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found for authenticated user');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 2. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Verify ownership
+  if (dispatch.donor_id !== donor.id) {
+    const err = new Error('Unauthorized: dispatch does not belong to this donor');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Idempotency: if already EN_ROUTE
+  if (dispatch.status === 'EN_ROUTE') {
+    return {
+      dispatchId: dispatch.id,
+      requestId: dispatch.request_id,
+      donorId: dispatch.donor_id,
+      status: 'EN_ROUTE',
+      enRouteAt: dispatch.en_route_at || dispatch.created_at,
+      isAlreadyStarted: true
+    };
+  }
+
+  // 5. State transition validation: must be ACCEPTED
+  if (dispatch.status !== 'ACCEPTED') {
+    const err = new Error(`Cannot start tracking for dispatch in status ${dispatch.status}`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  // 6. Transition to EN_ROUTE
+  const nowIso = new Date().toISOString();
+  const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      status: 'EN_ROUTE',
+      en_route_at: nowIso
+    })
+    .eq('id', dispatchId)
+    .select('*')
+    .single();
+
+  if (updateErr) {
+    const err = new Error(updateErr.message || 'Failed to update dispatch to EN_ROUTE');
+    err.code = updateErr.code || 'UPDATE_FAILED';
+    throw err;
+  }
+
+  // 7. Audit log: DONOR_DISPATCH_EN_ROUTE
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_user_id: donorUserId,
+      action: 'DONOR_DISPATCH_EN_ROUTE',
+      entity_type: 'donor_dispatch',
+      entity_id: dispatchId,
+      metadata: {
+        request_id: dispatch.request_id,
+        donor_id: donor.id
+      },
+      is_synthetic: false
+    });
+  } catch (auditErr) {
+    console.error('Audit logging failed for DONOR_DISPATCH_EN_ROUTE:', auditErr.message || auditErr);
+  }
+
+  // 8. Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: donor.id,
+      event: 'DONOR_DISPATCH_EN_ROUTE',
+      title: 'Donor En Route',
+      body: 'Donor is on the way.'
+    });
+  } catch (notifErr) {
+    console.error('Hospital notification failed for EN_ROUTE:', notifErr.message || notifErr);
+  }
+
+  return {
+    dispatchId: updatedDispatch.id,
+    requestId: updatedDispatch.request_id,
+    donorId: updatedDispatch.donor_id,
+    status: 'EN_ROUTE',
+    enRouteAt: nowIso,
+    isAlreadyStarted: false
+  };
+}
+
+/**
+ * Record donor live location update: appends to public.live_locations.
+ * Strictly validated: latitude between -90 and 90, longitude between -180 and 180, finite numbers.
+ * Dispatch must be in EN_ROUTE status.
+ */
+export async function recordDonorLocation({ dispatchId, donorUserId, latitude, longitude }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+    const err = new Error('Latitude must be between -90 and 90, longitude between -180 and 180');
+    err.code = 'INVALID_LOCATION';
+    throw err;
+  }
+
+  // 1. Resolve donor profile
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found for authenticated user');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 2. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Verify ownership
+  if (dispatch.donor_id !== donor.id) {
+    const err = new Error('Unauthorized: dispatch does not belong to this donor');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Must be EN_ROUTE
+  if (dispatch.status !== 'EN_ROUTE') {
+    const err = new Error(`Location updates are only accepted when dispatch is EN_ROUTE (current status: ${dispatch.status})`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  const nowIso = new Date().toISOString();
+
+  // 5. Insert into live_locations with server-generated timestamp
+  const { data: locationRecord, error: locErr } = await supabaseAdmin
+    .from('live_locations')
+    .insert({
+      dispatch_id: dispatch.id,
+      donor_id: donor.id,
+      request_id: dispatch.request_id,
+      latitude: lat,
+      longitude: lon,
+      recorded_at: nowIso,
+      is_synthetic: false
+    })
+    .select('*')
+    .maybeSingle();
+
+  if (locErr) {
+    console.error('Failed to insert live_locations record:', locErr);
+  }
+
+  // 6. Update current coordinates in donor_dispatches
+  await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      current_latitude: lat,
+      current_longitude: lon
+    })
+    .eq('id', dispatchId);
+
+  // 7. Audit log (sanitized: do NOT log raw coordinates in audit metadata)
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_user_id: donorUserId,
+      action: 'DONOR_DISPATCH_LOCATION_UPDATED',
+      entity_type: 'donor_dispatch',
+      entity_id: dispatchId,
+      metadata: {
+        request_id: dispatch.request_id,
+        donor_id: donor.id
+      },
+      is_synthetic: false
+    });
+  } catch (auditErr) {
+    console.error('Audit logging failed for DONOR_DISPATCH_LOCATION_UPDATED:', auditErr.message || auditErr);
+  }
+
+  return {
+    dispatchId: dispatch.id,
+    requestId: dispatch.request_id,
+    latitude: lat,
+    longitude: lon,
+    recordedAt: locationRecord?.recorded_at || nowIso
+  };
+}
+
+/**
+ * Retrieve tracking state for a dispatch.
+ * Accessible ONLY by:
+ * 1. The donor who owns the dispatch.
+ * 2. Active hospital staff belonging to the hospital that owns the emergency request.
+ */
+export async function getDispatchTracking({ dispatchId, user, organization }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  // 1. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 2. Lookup emergency request
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id, blood_group, quantity, status')
+    .eq('id', dispatch.request_id)
+    .maybeSingle();
+
+  if (reqErr || !request) {
+    const err = new Error('Emergency request not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Authorization check
+  const role = user?.role;
+  if (role === 'DONOR') {
+    const { data: donor } = await supabaseAdmin
+      .from('donors')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!donor || dispatch.donor_id !== donor.id) {
+      const err = new Error('Unauthorized access to dispatch tracking');
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+  } else if (role === 'HOSPITAL') {
+    const hospitalId = organization?.hospitalId;
+    if (!hospitalId || request.hospital_id !== hospitalId) {
+      const err = new Error('Hospital is not authorized to view tracking for this dispatch');
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+  } else {
+    const err = new Error('Unauthorized role for tracking visibility');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Query latest location from live_locations
+  let latestLocation = null;
+  try {
+    const { data: locs } = await supabaseAdmin
+      .from('live_locations')
+      .select('latitude, longitude, eta, recorded_at')
+      .or(`dispatch_id.eq.${dispatch.id},and(donor_id.eq.${dispatch.donor_id},request_id.eq.${dispatch.request_id})`)
+      .order('recorded_at', { ascending: false })
+      .limit(1);
+
+    if (locs && locs.length > 0) {
+      latestLocation = locs[0];
+    }
+  } catch (locErr) {
+    // Fallback if error querying live_locations
+  }
+
+  if (!latestLocation && dispatch.current_latitude != null && dispatch.current_longitude != null) {
+    latestLocation = {
+      latitude: dispatch.current_latitude,
+      longitude: dispatch.current_longitude,
+      recorded_at: dispatch.en_route_at || dispatch.accepted_at || dispatch.created_at
+    };
+  }
+
+  return {
+    dispatchId: dispatch.id,
+    requestId: dispatch.request_id,
+    donorId: dispatch.donor_id,
+    status: dispatch.status,
+    currentLocation: latestLocation ? {
+      latitude: latestLocation.latitude,
+      longitude: latestLocation.longitude,
+      eta: latestLocation.eta ?? null,
+      recordedAt: latestLocation.recorded_at
+    } : null,
+    timestamps: {
+      notifiedAt: dispatch.notified_at ?? null,
+      acceptedAt: dispatch.accepted_at ?? null,
+      enRouteAt: dispatch.en_route_at ?? null,
+      arrivedAt: dispatch.arrived_at ?? null,
+      completedAt: dispatch.completed_at ?? null
+    }
+  };
+}
+
+/**
+ * Mark donor arrival: transitions EN_ROUTE -> ARRIVED.
+ * Authorized for:
+ * - Active staff of the requesting hospital.
+ * - The donor assigned to the dispatch.
+ */
+export async function markDonorArrived({ dispatchId, user, organization }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  // 1. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 2. Lookup emergency request
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id')
+    .eq('id', dispatch.request_id)
+    .maybeSingle();
+
+  if (reqErr || !request) {
+    const err = new Error('Emergency request not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Authorization check
+  const role = user?.role;
+  if (role === 'HOSPITAL') {
+    const hospitalId = organization?.hospitalId;
+    if (!hospitalId || request.hospital_id !== hospitalId) {
+      const err = new Error('Hospital is not authorized to mark arrival for this dispatch');
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+  } else if (role === 'DONOR') {
+    const { data: donor } = await supabaseAdmin
+      .from('donors')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (!donor || dispatch.donor_id !== donor.id) {
+      const err = new Error('Donor is not authorized to mark arrival for this dispatch');
+      err.code = 'FORBIDDEN';
+      throw err;
+    }
+  } else {
+    const err = new Error('Unauthorized role for marking arrival');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Idempotency: if already ARRIVED
+  if (dispatch.status === 'ARRIVED') {
+    return {
+      dispatchId: dispatch.id,
+      requestId: dispatch.request_id,
+      donorId: dispatch.donor_id,
+      status: 'ARRIVED',
+      arrivedAt: dispatch.arrived_at || dispatch.created_at,
+      isAlreadyArrived: true
+    };
+  }
+
+  // 5. State transition check: must be EN_ROUTE
+  if (dispatch.status !== 'EN_ROUTE') {
+    const err = new Error(`Cannot mark dispatch as arrived from status ${dispatch.status}`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  // 6. Transition to ARRIVED
+  const nowIso = new Date().toISOString();
+  const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      status: 'ARRIVED',
+      arrived_at: nowIso
+    })
+    .eq('id', dispatchId)
+    .select('*')
+    .single();
+
+  if (updateErr) {
+    const err = new Error(updateErr.message || 'Failed to update dispatch to ARRIVED');
+    err.code = updateErr.code || 'UPDATE_FAILED';
+    throw err;
+  }
+
+  // 7. Audit log: DONOR_DISPATCH_ARRIVED
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_user_id: user.id,
+      action: 'DONOR_DISPATCH_ARRIVED',
+      entity_type: 'donor_dispatch',
+      entity_id: dispatchId,
+      metadata: {
+        request_id: dispatch.request_id,
+        donor_id: dispatch.donor_id
+      },
+      is_synthetic: false
+    });
+  } catch (auditErr) {
+    console.error('Audit logging failed for DONOR_DISPATCH_ARRIVED:', auditErr.message || auditErr);
+  }
+
+  // 8. Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: dispatch.donor_id,
+      event: 'DONOR_DISPATCH_ARRIVED',
+      title: 'Donor Arrived',
+      body: 'Donor has arrived.'
+    });
+  } catch (notifErr) {
+    console.error('Hospital notification failed for ARRIVED:', notifErr.message || notifErr);
+  }
+
+  return {
+    dispatchId: updatedDispatch.id,
+    requestId: updatedDispatch.request_id,
+    donorId: updatedDispatch.donor_id,
+    status: 'ARRIVED',
+    arrivedAt: nowIso,
+    isAlreadyArrived: false
+  };
+}
+
+/**
+ * Complete donor dispatch: transitions ARRIVED -> COMPLETED.
+ * Strictly authorized to active staff of the requesting hospital.
+ * Preserves fulfillment accounting idempotently without double-counting units.
+ */
+export async function completeDonorDispatch({ dispatchId, user, organization }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  // 1. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 2. Lookup emergency request
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id, status, quantity, completed_at')
+    .eq('id', dispatch.request_id)
+    .maybeSingle();
+
+  if (reqErr || !request) {
+    const err = new Error('Emergency request not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Authorization: requesting hospital staff only
+  const hospitalId = organization?.hospitalId;
+  if (!hospitalId || request.hospital_id !== hospitalId) {
+    const err = new Error('Only staff of the requesting hospital can complete donor dispatches');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Idempotency: if already COMPLETED
+  if (dispatch.status === 'COMPLETED') {
+    return {
+      dispatchId: dispatch.id,
+      requestId: dispatch.request_id,
+      donorId: dispatch.donor_id,
+      status: 'COMPLETED',
+      requestStatus: request.status,
+      completedAt: dispatch.completed_at || dispatch.created_at,
+      isAlreadyCompleted: true
+    };
+  }
+
+  // 5. State transition check: must be ARRIVED
+  if (dispatch.status !== 'ARRIVED') {
+    const err = new Error(`Cannot complete dispatch in status ${dispatch.status}`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  // 6. Transition to COMPLETED
+  const nowIso = new Date().toISOString();
+  const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      status: 'COMPLETED',
+      completed_at: nowIso
+    })
+    .eq('id', dispatchId)
+    .select('*')
+    .single();
+
+  if (updateErr) {
+    const err = new Error(updateErr.message || 'Failed to update dispatch to COMPLETED');
+    err.code = updateErr.code || 'UPDATE_FAILED';
+    throw err;
+  }
+
+  // 7. Request Fulfillment Integrity: unit was already accounted on ACCEPTED.
+  // Verify request status: if not already FULFILLED, check total allocations.
+  let requestStatus = request.status;
+  if (requestStatus !== 'FULFILLED') {
+    const { data: allocations } = await supabaseAdmin
+      .from('request_inventory_allocations')
+      .select('allocated_units')
+      .eq('request_id', request.id)
+      .eq('status', 'RESERVED');
+
+    const reservedInv = (allocations || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+
+    const { data: activeDispatches } = await supabaseAdmin
+      .from('donor_dispatches')
+      .select('id')
+      .eq('request_id', request.id)
+      .in('status', ['ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'COMPLETED']);
+
+    const totalCovered = reservedInv + (activeDispatches || []).length;
+    if (totalCovered >= request.quantity) {
+      requestStatus = 'FULFILLED';
+      await supabaseAdmin
+        .from('emergency_requests')
+        .update({
+          status: 'FULFILLED',
+          completed_at: request.completed_at || nowIso
+        })
+        .eq('id', request.id);
+    }
+  }
+
+  // 8. Audit log: DONOR_DISPATCH_COMPLETED
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_user_id: user.id,
+      action: 'DONOR_DISPATCH_COMPLETED',
+      entity_type: 'donor_dispatch',
+      entity_id: dispatchId,
+      metadata: {
+        request_id: dispatch.request_id,
+        donor_id: dispatch.donor_id
+      },
+      is_synthetic: false
+    });
+  } catch (auditErr) {
+    console.error('Audit logging failed for DONOR_DISPATCH_COMPLETED:', auditErr.message || auditErr);
+  }
+
+  // 9. Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: dispatch.donor_id,
+      event: 'DONOR_DISPATCH_COMPLETED',
+      title: 'Donor Dispatch Completed',
+      body: 'Donor dispatch completed.'
+    });
+  } catch (notifErr) {
+    console.error('Hospital notification failed for COMPLETED:', notifErr.message || notifErr);
+  }
+
+  return {
+    dispatchId: updatedDispatch.id,
+    requestId: updatedDispatch.request_id,
+    donorId: updatedDispatch.donor_id,
+    status: 'COMPLETED',
+    requestStatus,
+    completedAt: nowIso,
+    isAlreadyCompleted: false
   };
 }

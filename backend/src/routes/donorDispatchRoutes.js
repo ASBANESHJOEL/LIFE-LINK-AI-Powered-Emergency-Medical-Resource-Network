@@ -1,7 +1,15 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
-import { createNextDonorDispatchBatch, respondToDonorDispatch } from '../services/donorDispatchService.js';
+import {
+  createNextDonorDispatchBatch,
+  respondToDonorDispatch,
+  startDonorTracking,
+  recordDonorLocation,
+  getDispatchTracking,
+  markDonorArrived,
+  completeDonorDispatch
+} from '../services/donorDispatchService.js';
 
 const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -146,6 +154,171 @@ router.post('/donor-dispatches/:dispatchId/respond', requireAuth, requireRole('D
       return res.status(400).json({ error: error.code, message: error.message });
     }
     return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to process donor dispatch response' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/tracking/start', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await startDonorTracking({
+      dispatchId,
+      donorUserId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Start tracking failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to start tracking' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/location', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const { latitude, longitude } = req.body || {};
+    if (latitude === undefined || longitude === undefined || typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return res.status(400).json({ error: 'INVALID_LOCATION', message: 'latitude and longitude are required numbers' });
+    }
+
+    const result = await recordDonorLocation({
+      dispatchId,
+      donorUserId: req.user.id,
+      latitude,
+      longitude
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Location update failed:', error);
+    if (error.code === 'INVALID_LOCATION') {
+      return res.status(400).json({ error: 'INVALID_LOCATION', message: error.message });
+    }
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to record location update' });
+  }
+});
+
+router.get('/donor-dispatches/:dispatchId/tracking', requireAuth, async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await getDispatchTracking({
+      dispatchId,
+      user: req.user,
+      organization: req.organization
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Get tracking failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to retrieve dispatch tracking' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/tracking/arrive', requireAuth, async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await markDonorArrived({
+      dispatchId,
+      user: req.user,
+      organization: req.organization
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Mark arrived failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to mark donor arrival' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/tracking/complete', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await completeDonorDispatch({
+      dispatchId,
+      user: req.user,
+      organization: req.organization
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Complete dispatch failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to complete donor dispatch' });
   }
 });
 
