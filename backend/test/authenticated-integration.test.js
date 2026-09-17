@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import app from '../src/index.js';
+import app from '../src/app.js';
 
 const integrationEnabled = process.env.LIFE_LINK_INTEGRATION === 'true';
 const hospitalToken = process.env.TEST_HOSPITAL_ACCESS_TOKEN;
