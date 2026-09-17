@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
-import { createNextDonorDispatchBatch } from '../services/donorDispatchService.js';
+import { createNextDonorDispatchBatch, respondToDonorDispatch } from '../services/donorDispatchService.js';
 
 const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -98,6 +98,54 @@ router.post('/requests/:requestId/donor-dispatches/next-batch', requireAuth, req
       error: 'INTERNAL_SERVER_ERROR',
       message: 'Failed to create donor dispatch batch'
     });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/respond', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const rawResponse = req.body?.response;
+    if (!rawResponse || typeof rawResponse !== 'string') {
+      return res.status(400).json({ error: 'INVALID_RESPONSE', message: 'response field is required and must be a string' });
+    }
+
+    const response = rawResponse.trim().toUpperCase();
+    if (!['ACCEPT', 'DECLINE'].includes(response)) {
+      return res.status(400).json({ error: 'INVALID_RESPONSE', message: 'response must be either ACCEPT or DECLINE' });
+    }
+
+    const result = await respondToDonorDispatch({
+      dispatchId,
+      donorUserId: req.user.id,
+      response
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Donor dispatch response failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message || 'Unauthorized access to donor dispatch' });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message || 'Dispatch or request not found' });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message || 'Invalid state transition' });
+    }
+    if (error.code === 'REQUEST_ALREADY_FULFILLED') {
+      return res.status(409).json({ error: 'REQUEST_ALREADY_FULFILLED', message: 'Emergency request is already fully fulfilled' });
+    }
+    if (error.code === 'REQUEST_NOT_OPEN') {
+      return res.status(409).json({ error: 'REQUEST_NOT_OPEN', message: 'Emergency request is no longer open for donor acceptance' });
+    }
+    if (error.code === 'INVALID_RESPONSE' || error.code === 'INVALID_ID') {
+      return res.status(400).json({ error: error.code, message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to process donor dispatch response' });
   }
 });
 

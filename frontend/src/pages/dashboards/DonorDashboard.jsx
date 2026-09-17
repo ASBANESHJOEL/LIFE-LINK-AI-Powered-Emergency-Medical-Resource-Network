@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { HeartHandshake, LogOut, Bell, Check, AlertCircle } from 'lucide-react';
+import { HeartHandshake, LogOut, Bell, Check, AlertCircle, X } from 'lucide-react';
 
 export function DonorDashboard() {
   const { userProfile, session, signOut } = useAuth();
@@ -9,6 +9,7 @@ export function DonorDashboard() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [respondingId, setRespondingId] = useState(null);
 
   // Fetch initial notifications via authenticated backend API
   useEffect(() => {
@@ -98,6 +99,35 @@ export function DonorDashboard() {
       }
     } catch (err) {
       console.error('Error marking notification as read via backend API:', err);
+    }
+  };
+
+  // Handle Respond To Dispatch (ACCEPT or DECLINE)
+  const handleRespondToDispatch = async (dispatchId, notificationId, response) => {
+    if (!session?.access_token || !dispatchId) return;
+    setRespondingId(dispatchId);
+    try {
+      const res = await fetch(`/api/donor-dispatches/${dispatchId}/respond`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ response })
+      });
+
+      if (res.ok) {
+        if (notificationId) {
+          await handleMarkAsRead(notificationId);
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        console.error(`Dispatch response failed: HTTP ${res.status}`, data);
+      }
+    } catch (err) {
+      console.error('Error responding to dispatch:', err);
+    } finally {
+      setRespondingId(null);
     }
   };
 
@@ -193,6 +223,9 @@ export function DonorDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '240px', overflowY: 'auto' }}>
                 {notifications.map((notif) => {
                   const isUnread = !notif.read_at;
+                  const dispatchId = notif.donor_dispatch_id || notif.metadata?.dispatch_id;
+                  const isBusy = respondingId === dispatchId;
+
                   return (
                     <div
                       key={notif.id}
@@ -223,17 +256,44 @@ export function DonorDashboard() {
                         </p>
                       </div>
 
-                      {isUnread && (
-                        <button
-                          onClick={() => handleMarkAsRead(notif.id)}
-                          className="btn btn-secondary"
-                          style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          title="Mark as read"
-                        >
-                          <Check size={14} />
-                          <span>Read</span>
-                        </button>
-                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isUnread && dispatchId && (
+                          <>
+                            <button
+                              onClick={() => handleRespondToDispatch(dispatchId, notif.id, 'ACCEPT')}
+                              disabled={isBusy}
+                              className="btn btn-primary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#10b981', borderColor: '#10b981' }}
+                              title="Accept Emergency Dispatch"
+                            >
+                              <Check size={14} />
+                              <span>{isBusy ? '...' : 'Accept'}</span>
+                            </button>
+                            <button
+                              onClick={() => handleRespondToDispatch(dispatchId, notif.id, 'DECLINE')}
+                              disabled={isBusy}
+                              className="btn btn-secondary"
+                              style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              title="Decline Dispatch"
+                            >
+                              <X size={14} />
+                              <span>Decline</span>
+                            </button>
+                          </>
+                        )}
+
+                        {isUnread && (
+                          <button
+                            onClick={() => handleMarkAsRead(notif.id)}
+                            className="btn btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                            title="Mark as read"
+                          >
+                            <Check size={14} />
+                            <span>Read</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

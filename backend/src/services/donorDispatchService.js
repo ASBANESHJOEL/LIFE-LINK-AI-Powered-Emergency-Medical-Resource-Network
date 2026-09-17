@@ -5,6 +5,7 @@ import { sendDispatchBatchNotifications } from './notificationService.js';
 const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED'];
 const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'COMPLETED'];
 const MAX_BATCH_SIZE = 5;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function getNextBatchNumber(requestId) {
   const { data, error } = await supabaseAdmin
@@ -262,5 +263,428 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
     auditLogged: true,
     auditError: null,
     notifications: notificationOutcome?.results || []
+  };
+}
+
+/**
+ * Send in-app notification to active staff members of the requesting hospital upon donor acceptance.
+ * Sanitized: omits patient PII/PHI.
+ * Idempotent: avoids duplicate notifications for the same dispatch.
+ */
+async function notifyHospitalOnDonorAccept({ requestId, dispatchId, donorId, remainingUnits, actorUserId }) {
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id, blood_group, resource_type, urgency')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqErr || !request?.hospital_id) return;
+
+  const { data: members, error: memErr } = await supabaseAdmin
+    .from('organization_members')
+    .select('user_id')
+    .eq('hospital_id', request.hospital_id)
+    .eq('organization_type', 'HOSPITAL')
+    .eq('is_active', true);
+
+  if (memErr || !members?.length) return;
+
+  const title = `Donor Accepted: ${request.blood_group} (${request.resource_type})`;
+  const body = `A verified donor has accepted the emergency dispatch for ${request.blood_group} (${request.resource_type}, urgency: ${request.urgency}). Remaining units needed: ${remainingUnits}.`;
+
+  for (const member of members) {
+    if (!member.user_id) continue;
+    try {
+      const { data: existing } = await supabaseAdmin
+        .from('notifications')
+        .select('id')
+        .eq('user_id', member.user_id)
+        .eq('request_id', requestId)
+        .contains('metadata', { dispatch_id: dispatchId })
+        .maybeSingle();
+
+      if (existing) continue;
+
+      await supabaseAdmin.from('notifications').insert({
+        user_id: member.user_id,
+        donor_dispatch_id: null, // set null to avoid conflicting with donor dispatch unique partial index
+        request_id: requestId,
+        channel: 'IN_APP',
+        status: 'DELIVERED',
+        title,
+        body,
+        metadata: {
+          dispatch_id: dispatchId,
+          donor_id: donorId,
+          blood_group: request.blood_group,
+          resource_type: request.resource_type,
+          urgency: request.urgency,
+          remaining_units: remainingUnits
+        },
+        sent_at: new Date().toISOString()
+      });
+    } catch (insertErr) {
+      console.error(`Failed to notify hospital user ${member.user_id}:`, insertErr.message || insertErr);
+    }
+  }
+}
+
+/**
+ * Direct table operations fallback for donor response if RPC is unavailable.
+ */
+async function executeDirectDonorResponse({ dispatchId, donorUserId, response }) {
+  // 1. Resolve donor profile
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found for authenticated user');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 2. Lookup dispatch
+  const { data: dispatch, error: dispatchErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispatchErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Verify ownership
+  if (dispatch.donor_id !== donor.id) {
+    const err = new Error('Unauthorized: dispatch does not belong to this donor');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 4. Handle DECLINE
+  if (response === 'DECLINE') {
+    if (dispatch.status === 'DECLINED') {
+      const { data: req } = await supabaseAdmin
+        .from('emergency_requests')
+        .select('id, quantity, status')
+        .eq('id', dispatch.request_id)
+        .maybeSingle();
+
+      return {
+        dispatch_id: dispatch.id,
+        request_id: dispatch.request_id,
+        donor_id: dispatch.donor_id,
+        dispatch_status: dispatch.status,
+        request_status: req?.status || 'OPEN',
+        remaining_units: req?.quantity || 0,
+        is_already_responded: true,
+        responded_at: dispatch.responded_at,
+        accepted_at: dispatch.accepted_at
+      };
+    }
+
+    if (['ACCEPTED', 'COMPLETED'].includes(dispatch.status)) {
+      const err = new Error('Cannot decline a dispatch that is already accepted or completed');
+      err.code = 'INVALID_STATE_TRANSITION';
+      throw err;
+    }
+
+    if (!['PENDING', 'NOTIFIED', 'RESPONDED'].includes(dispatch.status)) {
+      const err = new Error(`Cannot decline dispatch in status ${dispatch.status}`);
+      err.code = 'INVALID_STATE_TRANSITION';
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
+      .from('donor_dispatches')
+      .update({
+        status: 'DECLINED',
+        responded_at: dispatch.responded_at || nowIso
+      })
+      .eq('id', dispatchId)
+      .select('*')
+      .single();
+
+    if (updateErr) {
+      const err = new Error(updateErr.message || 'Failed to update dispatch status');
+      err.code = updateErr.code;
+      throw err;
+    }
+
+    const { data: req } = await supabaseAdmin
+      .from('emergency_requests')
+      .select('id, quantity, status')
+      .eq('id', dispatch.request_id)
+      .maybeSingle();
+
+    return {
+      dispatch_id: updatedDispatch.id,
+      request_id: updatedDispatch.request_id,
+      donor_id: updatedDispatch.donor_id,
+      dispatch_status: updatedDispatch.status,
+      request_status: req?.status || 'OPEN',
+      remaining_units: req?.quantity || 0,
+      is_already_responded: false,
+      responded_at: updatedDispatch.responded_at,
+      accepted_at: updatedDispatch.accepted_at
+    };
+  }
+
+  // 5. Handle ACCEPT
+  if (response === 'ACCEPT') {
+    if (dispatch.status === 'ACCEPTED') {
+      const { data: req } = await supabaseAdmin
+        .from('emergency_requests')
+        .select('id, quantity, status')
+        .eq('id', dispatch.request_id)
+        .maybeSingle();
+
+      return {
+        dispatch_id: dispatch.id,
+        request_id: dispatch.request_id,
+        donor_id: dispatch.donor_id,
+        dispatch_status: dispatch.status,
+        request_status: req?.status || 'PARTIALLY_FULFILLED',
+        remaining_units: 0,
+        is_already_responded: true,
+        responded_at: dispatch.responded_at,
+        accepted_at: dispatch.accepted_at
+      };
+    }
+
+    if (dispatch.status === 'DECLINED') {
+      const err = new Error('Cannot accept a dispatch that has already been declined');
+      err.code = 'INVALID_STATE_TRANSITION';
+      throw err;
+    }
+
+    if (!['PENDING', 'NOTIFIED', 'RESPONDED'].includes(dispatch.status)) {
+      const err = new Error(`Cannot accept dispatch in status ${dispatch.status}`);
+      err.code = 'INVALID_STATE_TRANSITION';
+      throw err;
+    }
+
+    const { data: req, error: reqErr } = await supabaseAdmin
+      .from('emergency_requests')
+      .select('id, quantity, status, completed_at')
+      .eq('id', dispatch.request_id)
+      .maybeSingle();
+
+    if (reqErr || !req) {
+      const err = new Error('Emergency request not found');
+      err.code = 'NOT_FOUND';
+      throw err;
+    }
+
+    if (!['OPEN', 'PARTIALLY_FULFILLED'].includes(req.status)) {
+      const err = new Error('Emergency request is no longer open for donor acceptance');
+      err.code = 'REQUEST_NOT_OPEN';
+      throw err;
+    }
+
+    // Inspect inventory and accepted dispatches
+    const { data: allocations } = await supabaseAdmin
+      .from('request_inventory_allocations')
+      .select('allocated_units')
+      .eq('request_id', req.id)
+      .eq('status', 'RESERVED');
+
+    const reservedInv = (allocations || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+
+    const { data: acceptedDispatches } = await supabaseAdmin
+      .from('donor_dispatches')
+      .select('id')
+      .eq('request_id', req.id)
+      .in('status', ['ACCEPTED', 'COMPLETED']);
+
+    const acceptedCount = (acceptedDispatches || []).length;
+    const totalCovered = reservedInv + acceptedCount;
+    const remainingUnits = Math.max(0, req.quantity - totalCovered);
+
+    if (remainingUnits <= 0) {
+      const err = new Error('Emergency request is already fully fulfilled');
+      err.code = 'REQUEST_ALREADY_FULFILLED';
+      throw err;
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
+      .from('donor_dispatches')
+      .update({
+        status: 'ACCEPTED',
+        responded_at: dispatch.responded_at || nowIso,
+        accepted_at: nowIso
+      })
+      .eq('id', dispatchId)
+      .select('*')
+      .single();
+
+    if (updateErr) {
+      const err = new Error(updateErr.message || 'Failed to accept donor dispatch');
+      err.code = updateErr.code;
+      throw err;
+    }
+
+    const newRemaining = Math.max(0, remainingUnits - 1);
+    const newRequestStatus = newRemaining === 0 ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
+
+    await supabaseAdmin
+      .from('emergency_requests')
+      .update({
+        status: newRequestStatus,
+        completed_at: newRemaining === 0 ? nowIso : null
+      })
+      .eq('id', req.id);
+
+    return {
+      dispatch_id: updatedDispatch.id,
+      request_id: updatedDispatch.request_id,
+      donor_id: updatedDispatch.donor_id,
+      dispatch_status: updatedDispatch.status,
+      request_status: newRequestStatus,
+      remaining_units: newRemaining,
+      is_already_responded: false,
+      responded_at: updatedDispatch.responded_at,
+      accepted_at: updatedDispatch.accepted_at
+    };
+  }
+
+  const err = new Error('Invalid response');
+  err.code = 'INVALID_RESPONSE';
+  throw err;
+}
+
+/**
+ * Respond to an active donor dispatch (ACCEPT or DECLINE).
+ * Strictly authenticates that the dispatch belongs to the donor mapped to donorUserId.
+ * Atomically updates dispatch and emergency request fulfillment state.
+ * Emits audit log and notifies hospital on ACCEPT without sensitive details.
+ */
+export async function respondToDonorDispatch({ dispatchId, donorUserId, response }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('Invalid dispatchId UUID');
+    err.code = 'INVALID_ID';
+    throw err;
+  }
+
+  const normResponse = String(response || '').trim().toUpperCase();
+  if (!['ACCEPT', 'DECLINE'].includes(normResponse)) {
+    const err = new Error('Response must be either ACCEPT or DECLINE');
+    err.code = 'INVALID_RESPONSE';
+    throw err;
+  }
+
+  if (!donorUserId) {
+    const err = new Error('donorUserId is required');
+    err.code = 'UNAUTHORIZED';
+    throw err;
+  }
+
+  // 1. Try atomic PostgreSQL RPC first
+  let rpcSucceeded = false;
+  let resultRecord = null;
+
+  try {
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('respond_to_donor_dispatch', {
+      p_dispatch_id: dispatchId,
+      p_donor_user_id: donorUserId,
+      p_response: normResponse
+    });
+
+    if (!rpcError && rpcData?.length) {
+      rpcSucceeded = true;
+      resultRecord = rpcData[0];
+    } else if (rpcError) {
+      if (rpcError.code === '42501') {
+        const err = new Error(rpcError.message || 'Unauthorized access to donor dispatch');
+        err.code = 'FORBIDDEN';
+        throw err;
+      }
+      if (rpcError.code === 'P0002') {
+        const err = new Error(rpcError.message || 'Dispatch or request not found');
+        err.code = 'NOT_FOUND';
+        throw err;
+      }
+      if (rpcError.code === '55000') {
+        const err = new Error(rpcError.message || 'Invalid state transition or request not open');
+        if (rpcError.message?.includes('already fully fulfilled')) {
+          err.code = 'REQUEST_ALREADY_FULFILLED';
+        } else if (rpcError.message?.includes('no longer open')) {
+          err.code = 'REQUEST_NOT_OPEN';
+        } else {
+          err.code = 'INVALID_STATE_TRANSITION';
+        }
+        throw err;
+      }
+      if (rpcError.code === '22023') {
+        const err = new Error(rpcError.message || 'Invalid response value');
+        err.code = 'INVALID_RESPONSE';
+        throw err;
+      }
+    }
+  } catch (err) {
+    if (['FORBIDDEN', 'NOT_FOUND', 'INVALID_STATE_TRANSITION', 'REQUEST_ALREADY_FULFILLED', 'REQUEST_NOT_OPEN', 'INVALID_RESPONSE'].includes(err.code)) {
+      throw err;
+    }
+  }
+
+  // 2. Direct operations fallback (if RPC unavailable)
+  if (!rpcSucceeded) {
+    resultRecord = await executeDirectDonorResponse({ dispatchId, donorUserId, response: normResponse });
+  }
+
+  // 3. Audit logging (DONOR_DISPATCH_ACCEPTED or DONOR_DISPATCH_DECLINED)
+  const auditAction = normResponse === 'ACCEPT' ? 'DONOR_DISPATCH_ACCEPTED' : 'DONOR_DISPATCH_DECLINED';
+  try {
+    await supabaseAdmin.from('audit_logs').insert({
+      actor_user_id: donorUserId,
+      action: auditAction,
+      entity_type: 'donor_dispatch',
+      entity_id: dispatchId,
+      metadata: {
+        request_id: resultRecord.request_id,
+        donor_id: resultRecord.donor_id,
+        dispatch_status: resultRecord.dispatch_status,
+        request_status: resultRecord.request_status,
+        remaining_units: resultRecord.remaining_units,
+        is_already_responded: Boolean(resultRecord.is_already_responded)
+      },
+      is_synthetic: false
+    });
+  } catch (auditErr) {
+    console.error(`Audit logging failed for ${auditAction}:`, auditErr.message || auditErr);
+  }
+
+  // 4. Hospital Notification on ACCEPT (only if newly accepted, not if duplicate/already accepted)
+  if (normResponse === 'ACCEPT' && !resultRecord.is_already_responded) {
+    try {
+      await notifyHospitalOnDonorAccept({
+        requestId: resultRecord.request_id,
+        dispatchId: resultRecord.dispatch_id,
+        donorId: resultRecord.donor_id,
+        remainingUnits: resultRecord.remaining_units,
+        actorUserId: donorUserId
+      });
+    } catch (notifyErr) {
+      console.error('Hospital notification failed on donor acceptance:', notifyErr.message || notifyErr);
+    }
+  }
+
+  return {
+    dispatchId: resultRecord.dispatch_id,
+    requestId: resultRecord.request_id,
+    donorId: resultRecord.donor_id,
+    dispatchStatus: resultRecord.dispatch_status,
+    requestStatus: resultRecord.request_status,
+    remainingUnits: resultRecord.remaining_units,
+    isAlreadyResponded: Boolean(resultRecord.is_already_responded),
+    respondedAt: resultRecord.responded_at,
+    acceptedAt: resultRecord.accepted_at
   };
 }
