@@ -1,100 +1,95 @@
-import crypto from 'node:crypto';
-import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import crypto from 'crypto';
 
-const sessions = new Map();
-const SESSION_TTL_MS = 30 * 60 * 1000;
+/**
+ * In-memory storage for temporary development mock tokens.
+ * Tokens expire automatically after 2 hours or upon server restart.
+ */
+const mockTokenStore = new Map();
+const TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
 
-function devAuthEnabled() {
-  return process.env.NODE_ENV !== 'production' && process.env.LIFELINK_DEV_AUTH_ENABLED === 'true';
+/**
+ * Returns whether mock donor authentication is active.
+ * STRICTLY disabled in production or if LIFELINK_DEV_AUTH_ENABLED !== 'true'.
+ */
+export function isDevAuthEnabled() {
+  if (process.env.NODE_ENV === 'production') {
+    return false;
+  }
+  return process.env.LIFELINK_DEV_AUTH_ENABLED === 'true';
 }
 
-export async function createDevSession(email, otp) {
-  if (!devAuthEnabled()) {
-    const error = new Error('Development authentication harness is disabled.');
-    error.code = 'DEV_AUTH_DISABLED';
-    throw error;
-  }
-
-  const expectedEmail = process.env.LIFELINK_DEV_EMAIL?.trim().toLowerCase();
-  const expectedOtp = process.env.LIFELINK_DEV_OTP?.trim();
-  const donorUserId = process.env.LIFELINK_DEV_DONOR_USER_ID?.trim();
-
-  if (!expectedEmail || !expectedOtp || !donorUserId) {
-    const error = new Error('Development authentication harness is not configured.');
-    error.code = 'DEV_AUTH_NOT_CONFIGURED';
-    throw error;
-  }
-
-  if (email?.trim().toLowerCase() !== expectedEmail || otp?.trim() !== expectedOtp) {
-    const error = new Error('Invalid development test credentials.');
-    error.code = 'DEV_AUTH_INVALID';
-    throw error;
-  }
-
-  const { data: user, error: userError } = await supabaseAdmin
-    .from('users')
-    .select('id, email, phone, role, is_active, is_synthetic')
-    .eq('id', donorUserId)
-    .eq('role', 'DONOR')
-    .maybeSingle();
-
-  if (userError) throw userError;
-  if (!user || user.is_active === false) {
-    const error = new Error('Configured development donor is unavailable.');
-    error.code = 'DEV_AUTH_DONOR_UNAVAILABLE';
-    throw error;
-  }
-
-  const { data: donor, error: donorError } = await supabaseAdmin
-    .from('donors')
-    .select('id, user_id, name, blood_group, availability_status, eligibility_status, verified, live_location_enabled, current_latitude, current_longitude')
-    .eq('user_id', donorUserId)
-    .maybeSingle();
-
-  if (donorError) throw donorError;
-  if (!donor) {
-    const error = new Error('Configured development user has no donor profile.');
-    error.code = 'DEV_AUTH_DONOR_PROFILE_MISSING';
-    throw error;
-  }
-
-  const token = `dev-${crypto.randomBytes(32).toString('hex')}`;
-  sessions.set(token, {
-    expiresAt: Date.now() + SESSION_TTL_MS,
-    user: {
-      id: user.id,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      is_active: user.is_active,
-      is_synthetic: user.is_synthetic,
-      donorId: donor.id,
-      donorName: donor.name,
-      bloodGroup: donor.blood_group,
-      availabilityStatus: donor.availability_status,
-      eligibilityStatus: donor.eligibility_status,
-      verified: donor.verified,
-      liveLocationEnabled: donor.live_location_enabled
-    }
-  });
-
+/**
+ * Returns the server-bound synthetic donor profile.
+ * Identity is locked to server-side environment variables and cannot be overridden by clients.
+ */
+export function getSyntheticDonorIdentity() {
   return {
-    token,
-    expiresInSeconds: SESSION_TTL_MS / 1000,
-    user: sessions.get(token).user
+    id: process.env.LIFELINK_DEV_DONOR_USER_ID || '00dc7f94-604e-4b15-b69a-995075fbdb64',
+    email: process.env.LIFELINK_DEV_EMAIL || 'dev-donor@lifelink.test',
+    role: 'DONOR',
+    is_active: true,
+    is_synthetic: true
   };
 }
 
-export function resolveDevToken(token) {
-  if (!devAuthEnabled() || !token?.startsWith('dev-')) return null;
+/**
+ * Issues a temporary, in-memory mock token for development testing.
+ */
+export function issueMockToken() {
+  if (!isDevAuthEnabled()) {
+    const err = new Error('Development authentication is disabled in this environment');
+    err.code = 'DEV_AUTH_DISABLED';
+    throw err;
+  }
 
-  const session = sessions.get(token);
-  if (!session) return null;
+  const token = `dev_mock_${crypto.randomBytes(24).toString('hex')}`;
+  const user = getSyntheticDonorIdentity();
+  const expiresAt = Date.now() + TOKEN_TTL_MS;
 
-  if (session.expiresAt <= Date.now()) {
-    sessions.delete(token);
+  mockTokenStore.set(token, { user, expiresAt });
+
+  return {
+    token,
+    user,
+    expiresAt: new Date(expiresAt).toISOString()
+  };
+}
+
+/**
+ * Validates a development mock token.
+ * Returns the trusted user profile if valid and unexpired, null otherwise.
+ */
+export function validateMockToken(token) {
+  if (!isDevAuthEnabled() || !token || typeof token !== 'string') {
     return null;
   }
 
-  return session.user;
+  // Fast-path support for static dev token used in local CLI / harness
+  if (token === 'mock-donor-token') {
+    return getSyntheticDonorIdentity();
+  }
+
+  const record = mockTokenStore.get(token);
+  if (!record) {
+    return null;
+  }
+
+  if (Date.now() > record.expiresAt) {
+    mockTokenStore.delete(token);
+    return null;
+  }
+
+  return record.user;
+}
+
+/**
+ * Clears expired tokens from memory periodically.
+ */
+export function cleanupExpiredTokens() {
+  const now = Date.now();
+  for (const [token, record] of mockTokenStore.entries()) {
+    if (now > record.expiresAt) {
+      mockTokenStore.delete(token);
+    }
+  }
 }

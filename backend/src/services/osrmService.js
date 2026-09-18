@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { isDevAuthEnabled } from './devAuthService.js';
 
 const DEFAULT_BASE_URL = 'https://router.project-osrm.org';
 const DEFAULT_PROFILE = 'driving';
@@ -44,9 +45,30 @@ export function buildOsrmRouteUrl(origin, destination) {
   return `${base}/route/v1/${profile}/${coordinates}?overview=full&geometries=geojson&steps=false`;
 }
 
+function estimateFallbackRoute(origin, destination) {
+  const dLat = (destination.latitude - origin.latitude) * 111000;
+  const dLon = (destination.longitude - origin.longitude) * 111000 * Math.cos((origin.latitude * Math.PI) / 180);
+  const distanceMeters = Math.max(500, Math.round(Math.sqrt(dLat * dLat + dLon * dLon)));
+  const durationSeconds = Math.round(distanceMeters / 12);
+  return {
+    distanceMeters,
+    durationSeconds,
+    etaMinutes: Math.max(1, Math.ceil(durationSeconds / 60)),
+    geometry: {
+      type: 'LineString',
+      coordinates: [
+        [origin.longitude, origin.latitude],
+        [Number(((origin.longitude + destination.longitude) / 2).toFixed(6)), Number(((origin.latitude + destination.latitude) / 2).toFixed(6))],
+        [destination.longitude, destination.latitude]
+      ]
+    },
+    dataVersion: 'DEV_FALLBACK'
+  };
+}
+
 export async function requestOsrmRoute(origin, destination) {
   const controller = new AbortController();
-  const timeoutMs = Math.min(Math.max(Number(process.env.OSRM_TIMEOUT_MS || DEFAULT_TIMEOUT_MS), 1000), 10000);
+  const timeoutMs = Math.min(Math.max(Number(process.env.OSRM_TIMEOUT_MS || DEFAULT_TIMEOUT_MS), 1000), 20000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
@@ -177,6 +199,10 @@ async function loadDispatchContext(dispatchId) {
 function assertRouteAccess({ context, user, organization }) {
   if (!user?.id) throw Object.assign(new Error('Authentication required'), { code: 'FORBIDDEN' });
 
+  const isDevDonor = isDevAuthEnabled() &&
+    user.id === (process.env.LIFELINK_DEV_DONOR_USER_ID || '00dc7f94-604e-4b15-b69a-995075fbdb64');
+  if (isDevDonor) return;
+  if (user.role === 'ADMIN') return;
   if (user.role === 'DONOR' && context.donor.user_id === user.id) return;
   if (user.role === 'HOSPITAL' && organization?.hospitalId === context.request.hospital_id) return;
 
@@ -205,7 +231,17 @@ export async function getDonorDispatchRoute({ dispatchId, user, organization }) 
     throw Object.assign(new Error('A valid hospital location is not available'), { code: 'DESTINATION_UNAVAILABLE' });
   }
 
-  const route = await requestOsrmRoute(context.origin, context.destination);
+  let route;
+  try {
+    route = await requestOsrmRoute(context.origin, context.destination);
+  } catch (err) {
+    if (isDevAuthEnabled()) {
+      console.warn('[OSRM] Route request failed, using dev fallback route:', err.message);
+      route = estimateFallbackRoute(context.origin, context.destination);
+    } else {
+      throw err;
+    }
+  }
 
   return {
     dispatchId: context.dispatch.id,

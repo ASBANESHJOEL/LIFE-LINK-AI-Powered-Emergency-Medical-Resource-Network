@@ -1,30 +1,43 @@
 import express from 'express';
-import { createDevSession } from '../services/devAuthService.js';
+import { isDevAuthEnabled, issueMockToken } from '../services/devAuthService.js';
 
 const router = express.Router();
 
-router.post('/dev-login', async (req, res) => {
-  try {
-    const { email, otp } = req.body || {};
-    const result = await createDevSession(email, otp);
-    return res.json({
-      ...result,
-      developmentOnly: true
-    });
-  } catch (error) {
-    const statusByCode = {
-      DEV_AUTH_DISABLED: 404,
-      DEV_AUTH_NOT_CONFIGURED: 503,
-      DEV_AUTH_INVALID: 401,
-      DEV_AUTH_DONOR_UNAVAILABLE: 503,
-      DEV_AUTH_DONOR_PROFILE_MISSING: 503
-    };
-
-    return res.status(statusByCode[error.code] || 500).json({
-      error: error.code || 'DEV_AUTH_ERROR',
-      message: error.message || 'Development authentication failed.'
+/**
+ * POST /api/auth/dev-login
+ * Development-only endpoint to issue a temporary mock donor session.
+ * Rejects with 403 in production or when dev auth is disabled.
+ * Client-supplied roles are strictly ignored; role is locked to DONOR.
+ */
+router.post('/auth/dev-login', (req, res) => {
+  if (!isDevAuthEnabled()) {
+    return res.status(403).json({
+      error: 'DEV_AUTH_DISABLED',
+      message: 'Development authentication is disabled in this environment'
     });
   }
+
+  try {
+    const session = issueMockToken();
+    return res.status(200).json(session);
+  } catch (err) {
+    console.error('[DEV-AUTH] Failed to issue mock token:', err);
+    return res.status(500).json({
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to issue development mock token'
+    });
+  }
+});
+
+/**
+ * GET /api/auth/dev-status
+ * Check if development authentication is enabled.
+ */
+router.get('/auth/dev-status', (req, res) => {
+  return res.status(200).json({
+    enabled: isDevAuthEnabled(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 export default router;

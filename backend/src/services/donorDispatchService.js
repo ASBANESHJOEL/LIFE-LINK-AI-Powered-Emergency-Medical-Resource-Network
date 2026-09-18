@@ -5,6 +5,8 @@ import { sendDispatchBatchNotifications } from './notificationService.js';
 const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED'];
 const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'COMPLETED'];
 const MAX_BATCH_SIZE = 5;
+import { isDevAuthEnabled } from './devAuthService.js';
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 async function getNextBatchNumber(requestId) {
@@ -897,7 +899,10 @@ export async function recordDonorLocation({ dispatchId, donorUserId, latitude, l
     .eq('user_id', donorUserId)
     .maybeSingle();
 
-  if (donorErr || !donor) {
+  const isDevDonor = isDevAuthEnabled() &&
+    donorUserId === (process.env.LIFELINK_DEV_DONOR_USER_ID || '00dc7f94-604e-4b15-b69a-995075fbdb64');
+
+  if ((donorErr || !donor) && !isDevDonor) {
     const err = new Error('Donor profile not found for authenticated user');
     err.code = 'FORBIDDEN';
     throw err;
@@ -917,19 +922,25 @@ export async function recordDonorLocation({ dispatchId, donorUserId, latitude, l
   }
 
   // 3. Verify ownership
-  if (dispatch.donor_id !== donor.id) {
+  if (!isDevDonor && (!donor || dispatch.donor_id !== donor.id)) {
     const err = new Error('Unauthorized: dispatch does not belong to this donor');
     err.code = 'FORBIDDEN';
     throw err;
   }
 
-  // 4. Must be EN_ROUTE
+  // 4. Must be EN_ROUTE (in dev mode for dev donor, auto-transition ACCEPTED to EN_ROUTE for location simulation)
   if (dispatch.status !== 'EN_ROUTE') {
-    const err = new Error(`Location updates are only accepted when dispatch is EN_ROUTE (current status: ${dispatch.status})`);
-    err.code = 'INVALID_STATE_TRANSITION';
-    throw err;
+    if (isDevDonor && dispatch.status === 'ACCEPTED') {
+      await supabaseAdmin.from('donor_dispatches').update({ status: 'EN_ROUTE' }).eq('id', dispatchId);
+      dispatch.status = 'EN_ROUTE';
+    } else {
+      const err = new Error(`Location updates are only accepted when dispatch is EN_ROUTE (current status: ${dispatch.status})`);
+      err.code = 'INVALID_STATE_TRANSITION';
+      throw err;
+    }
   }
 
+  const effectiveDonorId = donor?.id || dispatch.donor_id;
   const nowIso = new Date().toISOString();
 
   // 5. Insert into live_locations with server-generated timestamp
@@ -937,7 +948,7 @@ export async function recordDonorLocation({ dispatchId, donorUserId, latitude, l
     .from('live_locations')
     .insert({
       dispatch_id: dispatch.id,
-      donor_id: donor.id,
+      donor_id: effectiveDonorId,
       request_id: dispatch.request_id,
       latitude: lat,
       longitude: lon,
@@ -969,7 +980,7 @@ export async function recordDonorLocation({ dispatchId, donorUserId, latitude, l
       entity_id: dispatchId,
       metadata: {
         request_id: dispatch.request_id,
-        donor_id: donor.id
+        donor_id: effectiveDonorId
       },
       is_synthetic: false
     });

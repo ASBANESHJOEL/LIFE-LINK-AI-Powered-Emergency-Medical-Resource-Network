@@ -17,6 +17,7 @@ import devAuthRouter from './routes/devAuthRoutes.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -36,6 +37,7 @@ const allowedOrigins = [
   'https://www.life-link.in',
   'https://life-link-ai-powered-emergency-medi.vercel.app',
   'http://localhost:3000',
+  'http://localhost:5000',
   'http://localhost:5173'
 ];
 
@@ -69,7 +71,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.use('/api/auth', devAuthRouter);
+app.use('/api', devAuthRouter);
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user, organization: req.organization });

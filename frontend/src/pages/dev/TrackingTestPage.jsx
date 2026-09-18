@@ -3,7 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '../../context/AuthContext';
 
-const INITIAL_DISPATCH_ID = '';
+const INITIAL_DISPATCH_ID = 'd1a5b835-43b2-4dc0-ad5d-137ddacbaad9';
 
 function lineStringBounds(coordinates = []) {
   if (!coordinates.length) return null;
@@ -13,7 +13,7 @@ function lineStringBounds(coordinates = []) {
 }
 
 export function TrackingTestPage() {
-  const { session, userProfile } = useAuth();
+  const { session, userProfile, loginWithMock } = useAuth();
   const mapContainer = useRef(null);
   const mapRef = useRef(null);
   const donorMarkerRef = useRef(null);
@@ -91,7 +91,11 @@ export function TrackingTestPage() {
           type: 'line',
           source: 'lifelink-route',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: { 'line-width': 5, 'line-opacity': 0.9 }
+          paint: {
+            'line-width': 5,
+            'line-color': '#dc2626',
+            'line-opacity': 0.9
+          }
         });
       }
 
@@ -268,6 +272,18 @@ export function TrackingTestPage() {
       )}
 
       <div className="tracking-test-controls glass-panel">
+        {!session?.access_token && (
+          <div className="alert alert-error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <span>Sign in as mock donor to query the routing API:</span>
+            <button
+              className="btn btn-secondary"
+              style={{ fontSize: '0.85rem', padding: '6px 14px' }}
+              onClick={() => loginWithMock('DONOR', 'dev-donor@lifelink.test')}
+            >
+              ⚡ 1-Click Mock Login
+            </button>
+          </div>
+        )}
         <label className="form-label" htmlFor="dispatch-id">Donor Dispatch UUID</label>
         <div className="tracking-test-input-row">
           <input

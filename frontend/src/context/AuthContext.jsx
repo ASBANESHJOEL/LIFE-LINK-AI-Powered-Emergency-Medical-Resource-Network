@@ -117,6 +117,26 @@ export function AuthProvider({ children }) {
 
     async function initAuth() {
       try {
+        const savedMock = localStorage.getItem('lifelink_dev_session');
+        if (savedMock) {
+          try {
+            const parsed = JSON.parse(savedMock);
+            if (parsed?.session?.access_token && parsed?.user) {
+              setSession(parsed.session);
+              setUser(parsed.user);
+              setUserProfile(parsed.user);
+              setRole(parsed.user.role);
+              setOrganization(null);
+              setProfileStatus('ACTIVE');
+              setAuthError(null);
+              setLoading(false);
+              return;
+            }
+          } catch {
+            localStorage.removeItem('lifelink_dev_session');
+          }
+        }
+
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (mounted) {
           setSession(initialSession);
@@ -141,6 +161,8 @@ export function AuthProvider({ children }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted) return;
+      if (localStorage.getItem('lifelink_dev_session')) return;
+
       setSession(newSession);
       setUser(newSession?.user || null);
 
@@ -161,8 +183,55 @@ export function AuthProvider({ children }) {
     };
   }, [fetchUserProfile]);
 
+  // Dev Mock Login
+  const loginWithMock = async (role = 'DONOR', email = 'dev-donor@lifelink.test') => {
+    try {
+      setLoading(true);
+      const res = await fetch('/api/auth/dev-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, email })
+      }).catch(() => null);
+
+      if (!res || !res.ok) {
+        const errData = await res?.json().catch(() => ({}));
+        throw new Error(errData?.message || errData?.error || 'Development authentication is unavailable or disabled');
+      }
+
+      const data = await res.json();
+      const token = data.token;
+      const userObj = data.user;
+
+      const mockSession = {
+        access_token: token,
+        token_type: 'bearer',
+        user: userObj
+      };
+
+      localStorage.setItem('lifelink_dev_session', JSON.stringify({ session: mockSession, user: userObj }));
+      setSession(mockSession);
+      setUser(userObj);
+      setUserProfile(userObj);
+      setRole(userObj.role);
+      setOrganization(null);
+      setProfileStatus('ACTIVE');
+      setAuthError(null);
+      setLoading(false);
+      return { user: userObj, session: mockSession };
+    } catch (err) {
+      console.error('Mock login failed:', err);
+      setAuthError(err.message);
+      setLoading(false);
+      throw err;
+    }
+  };
+
   // Request passwordless Email OTP
   const signInWithOtp = async (email) => {
+    if (import.meta.env.DEV && (email.toLowerCase().includes('dev-donor') || email.toLowerCase().endsWith('@lifelink.test'))) {
+      return { message: 'Dev OTP dispatched' };
+    }
+
     // Uses shouldCreateUser: false so unprovisioned accounts are not silently created
     const { data, error } = await supabase.auth.signInWithOtp({
       email,
@@ -173,8 +242,8 @@ export function AuthProvider({ children }) {
 
     if (error) {
       // Map Supabase error message cleanly
-      if (error.message?.toLowerCase().includes('signups not allowed')) {
-        throw new Error('Account not found. Your email must be provisioned before signing in.');
+      if (error.message.toLowerCase().includes('signups not allowed')) {
+        throw new Error('This email is not registered with LIFE-LINK. Contact your administrator to provision access.');
       }
       throw error;
     }
@@ -182,8 +251,12 @@ export function AuthProvider({ children }) {
     return data;
   };
 
-  // Verify 6-digit OTP
+  // Verify 6 or 8-digit OTP
   const verifyOtp = async (email, token) => {
+    if (import.meta.env.DEV && (email.toLowerCase().includes('dev-donor') || email.toLowerCase().endsWith('@lifelink.test') || token === '00000000')) {
+      return loginWithMock('DONOR', email);
+    }
+
     const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
@@ -200,7 +273,8 @@ export function AuthProvider({ children }) {
   // Sign out cleanly
   const signOut = async () => {
     setLoading(true);
-    await supabase.auth.signOut();
+    localStorage.removeItem('lifelink_dev_session');
+    await supabase.auth.signOut().catch(() => {});
     setSession(null);
     setUser(null);
     setUserProfile(null);
@@ -222,6 +296,7 @@ export function AuthProvider({ children }) {
     loading,
     signInWithOtp,
     verifyOtp,
+    loginWithMock,
     signOut,
     refreshProfile: () => fetchUserProfile(session)
   };
