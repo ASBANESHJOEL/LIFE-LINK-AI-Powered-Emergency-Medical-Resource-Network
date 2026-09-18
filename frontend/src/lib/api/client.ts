@@ -5,7 +5,7 @@ import {
   InventoryResolutionResult,
   PeerBanksResolutionResult,
 } from '../../types/requests';
-import { AcceptTransferOfferResponse, BloodBankTransferOffer } from '../../types/transfers';
+import { AcceptTransferOfferResponse } from '../../types/transfers';
 import {
   DonorDispatch,
   EligibleDonor,
@@ -28,13 +28,9 @@ class ApiClientError extends Error {
   }
 }
 
-async function request<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers || {});
-  
-  // Attach session Bearer token if not explicitly provided
+
   if (!headers.has('Authorization')) {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
@@ -46,16 +42,11 @@ async function request<T>(
     headers.set('Content-Type', 'application/json');
   }
 
-  // Rewrite /api/... to relative URL, handled by Next.js rewrites or proxy
   const url = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  const response = await fetch(url, { ...options, headers });
 
   const contentType = response.headers.get('content-type');
-  const isJson = contentType && contentType.includes('application/json');
+  const isJson = contentType?.includes('application/json');
   const body = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
@@ -68,6 +59,26 @@ async function request<T>(
   return body as T;
 }
 
+const bloodGroupToApi: Record<string, string> = {
+  'A+': 'A_POSITIVE',
+  'A-': 'A_NEGATIVE',
+  'B+': 'B_POSITIVE',
+  'B-': 'B_NEGATIVE',
+  'AB+': 'AB_POSITIVE',
+  'AB-': 'AB_NEGATIVE',
+  'O+': 'O_POSITIVE',
+  'O-': 'O_NEGATIVE',
+};
+
+const resourceTypeToApi: Record<string, string> = {
+  WHOLE_BLOOD: 'WHOLE_BLOOD',
+  PACKED_RED_CELLS: 'RED_BLOOD_CELLS',
+  RED_BLOOD_CELLS: 'RED_BLOOD_CELLS',
+  PLATELETS: 'PLATELETS',
+  FRESH_FROZEN_PLASMA: 'PLASMA',
+  PLASMA: 'PLASMA',
+};
+
 export const api = {
   auth: {
     getMe: () => request<AuthUserResponse>('/api/auth/me'),
@@ -77,7 +88,12 @@ export const api = {
     create: (payload: CreateEmergencyRequestPayload) =>
       request<{ request: EmergencyRequest }>('/api/requests', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          ...payload,
+          blood_group: bloodGroupToApi[payload.blood_group] ?? payload.blood_group,
+          resource_type: resourceTypeToApi[payload.resource_type] ?? payload.resource_type,
+          urgency: payload.urgency,
+        }),
       }),
 
     resolveInventory: (requestId: string) =>
@@ -117,7 +133,7 @@ export const api = {
 
   donorDispatches: {
     respond: (dispatchId: string, response: 'ACCEPT' | 'DECLINE') =>
-      request<{ dispatch: DonorDispatch }>(`/api/donor-dispatches/${dispatchId}/respond`, {
+      request<DonorDispatch>(`/api/donor-dispatches/${dispatchId}/respond`, {
         method: 'POST',
         body: JSON.stringify({ response }),
       }),
@@ -147,9 +163,7 @@ export const api = {
     complete: (dispatchId: string) =>
       request<{ status: string; requestStatus: string }>(
         `/api/donor-dispatches/${dispatchId}/tracking/complete`,
-        {
-          method: 'POST',
-        }
+        { method: 'POST' }
       ),
   },
 
@@ -166,7 +180,7 @@ export const api = {
     },
 
     markRead: (id: string) =>
-      request<{ message: string; notification: unknown }>(`/api/notifications/${id}/read`, {
+      request<{ success: boolean; notification: unknown }>(`/api/notifications/${id}/read`, {
         method: 'PATCH',
       }),
   },
