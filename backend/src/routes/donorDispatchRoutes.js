@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getDonorDispatchRoute } from '../services/osrmService.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import {
@@ -226,6 +227,50 @@ router.post('/donor-dispatches/:dispatchId/location', requireAuth, requireRole('
       return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
     }
     return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to record location update' });
+  }
+});
+
+router.get('/donor-dispatches/:dispatchId/route', requireAuth, async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await getDonorDispatchRoute({
+      dispatchId,
+      user: req.user,
+      organization: req.organization
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('OSRM route lookup failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'LOCATION_UNAVAILABLE' || error.code === 'DESTINATION_UNAVAILABLE') {
+      return res.status(422).json({ error: error.code, message: error.message });
+    }
+    if (error.code === 'NO_ROUTE') {
+      return res.status(422).json({ error: 'NO_ROUTE', message: 'No drivable route was found for the current coordinates' });
+    }
+    if (error.code === 'OSRM_TIMEOUT' || error.code === 'OSRM_UNAVAILABLE') {
+      return res.status(503).json({ error: 'ROUTING_SERVICE_UNAVAILABLE', message: 'Routing service is temporarily unavailable' });
+    }
+    if (error.code === 'OSRM_CONFIG_ERROR') {
+      return res.status(500).json({ error: 'ROUTING_CONFIGURATION_ERROR', message: 'Routing service is not configured correctly' });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to calculate donor route' });
   }
 });
 
