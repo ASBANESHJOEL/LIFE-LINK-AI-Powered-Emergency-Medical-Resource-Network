@@ -3,12 +3,8 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ShieldCheck, Mail, ArrowRight, Lock, AlertCircle } from 'lucide-react';
+import { ArrowRight, ShieldCheck, AlertCircle, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../../components/ui/card';
-import { Alert, AlertTitle, AlertDescription } from '../../components/ui/alert';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,94 +15,73 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !email.includes('@')) {
-      setErrorMessage('Please provide a valid registered medical or volunteer email address.');
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setErrorMessage('Please enter a valid email address.');
       return;
     }
-
     setIsLoading(true);
     setErrorMessage(null);
-
-    const result = await signInWithOtp(email);
+    const result = await signInWithOtp(cleanEmail);
     setIsLoading(false);
-
-    if (result.success) {
-      router.push(`/verify-otp?email=${encodeURIComponent(email)}`);
-    } else {
-      setErrorMessage(
-        result.error || 'Failed to dispatch verification code. Please confirm account provisioning.'
-      );
-    }
+    if (result.success) router.push('/verify-otp?email=' + encodeURIComponent(cleanEmail));
+    else setErrorMessage(result.error || 'Unable to send the verification code.');
   };
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center p-4 bg-[#090d16]">
-      <div className="w-full max-w-md">
-        {/* Header Branding */}
-        <div className="text-center mb-8">
-          <div className="inline-flex h-12 w-12 rounded-xl bg-gradient-to-br from-red-600 to-red-800 items-center justify-center text-white font-black text-2xl shadow-xl shadow-red-950/60 mb-3">
-            +
-          </div>
-          <h2 className="text-2xl font-black text-white tracking-tight">LIFE-LINK Operations</h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Authorized Medical Resource Network Access
-          </p>
+    <div className="lifelink-page flex min-h-screen items-center justify-center px-4 py-10">
+      <div className="auth-surface p-6 sm:p-9">
+        <Link href="/" className="brand-mark">
+          <span className="brand-mark-icon"><span className="text-base">+</span></span>
+          <span className="brand-mark-word">LIFE LINK</span>
+        </Link>
+
+        <div className="mt-10">
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Log in</h1>
+          <p className="mt-2 text-xs leading-5 text-slate-500">Access your account without a password.</p>
         </div>
 
-        <Card className="border-slate-800 bg-slate-900/90 shadow-2xl backdrop-blur-xl">
-          <CardHeader>
-            <CardTitle className="text-base text-white flex items-center justify-between">
-              <span>Medical Personnel Sign In</span>
-              <Lock className="w-4 h-4 text-sky-400" />
-            </CardTitle>
-            <CardDescription className="text-xs text-slate-400">
-              Enter your provisioned email to receive a secure one-time verification code.
-            </CardDescription>
-          </CardHeader>
+        {errorMessage && (
+          <div className="mt-5 flex gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
 
-          <CardContent className="space-y-4 pt-2">
-            {errorMessage && (
-              <Alert variant="destructive">
-                <AlertCircle className="w-4 h-4" />
-                <AlertTitle>Authentication Failed</AlertTitle>
-                <AlertDescription>{errorMessage}</AlertDescription>
-              </Alert>
-            )}
+        <form onSubmit={handleSubmit} className="mt-7 space-y-5">
+          <div>
+            <label htmlFor="email" className="block text-[11px] font-semibold text-slate-700">Enter valid email</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setErrorMessage(null); }}
+              placeholder="name@example.com"
+              autoComplete="email"
+              autoFocus
+              disabled={isLoading}
+              className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10"
+            />
+          </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <Input
-                label="Registered Institutional / Volunteer Email"
-                type="email"
-                placeholder="coordinator@hospital.org"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoFocus
-                disabled={isLoading}
-              />
+          <button type="submit" disabled={isLoading} className="h-11 w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60">
+            {isLoading ? 'Sending OTP...' : 'Send OTP'}
+            {!isLoading && <ArrowRight className="w-4 h-4" />}
+          </button>
+        </form>
 
-              <Button
-                type="submit"
-                variant="default"
-                className="w-full h-11 text-sm font-semibold"
-                isLoading={isLoading}
-              >
-                Send One-Time Passcode
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </form>
-          </CardContent>
+        <div className="mt-6 flex items-center gap-2 text-[10px] text-slate-400">
+          <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
+          Passwordless verification via secure email OTP
+        </div>
 
-          <CardFooter className="flex flex-col space-y-3 pt-2 text-center text-xs text-slate-500">
-            <div className="flex items-center justify-center gap-1.5 text-slate-400">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Cryptographically signed 8-digit OTP via Supabase</span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              Unprovisioned personnel should contact their facility emergency administrator.
-            </p>
-          </CardFooter>
-        </Card>
+        <div className="mt-7 text-center text-xs text-slate-500">
+          New to LIFE LINK? <Link href="/choose-role" className="font-semibold text-blue-600 hover:text-blue-700">Create an account</Link>
+        </div>
+
+        <Link href="/" className="mt-7 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-700">
+          <ChevronLeft className="w-3.5 h-3.5" /> Back to home
+        </Link>
       </div>
     </div>
   );
