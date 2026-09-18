@@ -1,9 +1,9 @@
 export type UserRole =
-  | 'HOSPITAL_COORDINATOR'
-  | 'BLOOD_BANK_OFFICER'
+  | 'HOSPITAL'
+  | 'BLOOD_BANK'
   | 'DONOR'
   | 'REGULATOR'
-  | 'SUPER_ADMIN';
+  | 'ADMIN';
 
 export interface UserProfile {
   id: string;
@@ -15,12 +15,16 @@ export interface UserProfile {
 }
 
 export interface OrganizationMembership {
+  membershipId?: string | null;
+  organizationType?: string | null;
   hospitalId: string | null;
   bloodBankId: string | null;
   membershipRole: string | null;
   hospital: {
     id: string;
-    name: string;
+    hospital_name?: string;
+    name?: string;
+    registration_id?: string;
     code?: string;
     latitude?: number;
     longitude?: number;
@@ -28,6 +32,7 @@ export interface OrganizationMembership {
   bloodBank: {
     id: string;
     name: string;
+    registration_id?: string;
     licenseNumber?: string;
     latitude?: number;
     longitude?: number;
@@ -36,7 +41,7 @@ export interface OrganizationMembership {
 
 export interface AuthUserResponse {
   user: UserProfile;
-  organization: OrganizationMembership;
+  organization: OrganizationMembership | null;
 }
 
 export interface AuthContextType {
