@@ -10,6 +10,7 @@ import { AdminDashboard } from './pages/dashboards/AdminDashboard';
 import { UnauthorizedPage } from './pages/UnauthorizedPage';
 import { UnprovisionedPage } from './pages/UnprovisionedPage';
 import { InactivePage } from './pages/InactivePage';
+import { TrackingTestPage } from './pages/dev/TrackingTestPage';
 
 export function App() {
   return (
@@ -17,6 +18,9 @@ export function App() {
       <AuthProvider>
         <div className="app-container">
           <Routes>
+            {/* Development integration harness — remove before public V1 launch */}
+            <Route path="/tracking-test" element={<TrackingTestPage />} />
+
             {/* Public Auth Routes */}
             <Route path="/login" element={<LoginPage />} />
             <Route path="/unauthorized" element={<UnauthorizedPage />} />
