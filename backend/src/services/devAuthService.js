@@ -64,11 +64,6 @@ export function validateMockToken(token) {
     return null;
   }
 
-  // Fast-path support for static dev token used in local CLI / harness
-  if (token === 'mock-donor-token') {
-    return getSyntheticDonorIdentity();
-  }
-
   const record = mockTokenStore.get(token);
   if (!record) {
     return null;

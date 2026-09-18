@@ -232,12 +232,14 @@ export async function getDonorDispatchRoute({ dispatchId, user, organization }) 
   }
 
   let route;
+  let isFallback = false;
   try {
     route = await requestOsrmRoute(context.origin, context.destination);
   } catch (err) {
     if (isDevAuthEnabled()) {
       console.warn('[OSRM] Route request failed, using dev fallback route:', err.message);
       route = estimateFallbackRoute(context.origin, context.destination);
+      isFallback = true;
     } else {
       throw err;
     }
@@ -254,7 +256,8 @@ export async function getDonorDispatchRoute({ dispatchId, user, organization }) 
     durationSeconds: route.durationSeconds,
     etaMinutes: route.etaMinutes,
     geometry: route.geometry,
-    routingProvider: 'OSRM',
+    routingProvider: isFallback ? 'OSRM_DEV_FALLBACK' : 'OSRM',
+    fallback: isFallback,
     dataVersion: route.dataVersion
   };
 }
