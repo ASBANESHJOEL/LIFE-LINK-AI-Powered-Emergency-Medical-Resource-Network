@@ -6,19 +6,36 @@ export type BloodGroup =
   | 'AB+'
   | 'AB-'
   | 'O+'
-  | 'O-';
+  | 'O-'
+  | 'A_POSITIVE'
+  | 'A_NEGATIVE'
+  | 'B_POSITIVE'
+  | 'B_NEGATIVE'
+  | 'AB_POSITIVE'
+  | 'AB_NEGATIVE'
+  | 'O_POSITIVE'
+  | 'O_NEGATIVE';
 
 export type ResourceType =
   | 'WHOLE_BLOOD'
   | 'PACKED_RED_CELLS'
+  | 'RED_BLOOD_CELLS'
   | 'PLATELETS'
-  | 'FRESH_FROZEN_PLASMA';
+  | 'FRESH_FROZEN_PLASMA'
+  | 'PLASMA';
 
-export type UrgencyLevel = 'CRITICAL' | 'URGENT' | 'STANDARD';
+export type UrgencyLevel =
+  | 'CRITICAL'
+  | 'URGENT'
+  | 'STANDARD'
+  | 'HIGH'
+  | 'MEDIUM'
+  | 'LOW';
 
 export type RequestStatus =
   | 'OPEN'
   | 'SEARCHING'
+  | 'PARTIALLY_FULFILLED'
   | 'INVENTORY_RESERVED'
   | 'PEER_TRANSFER_PENDING'
   | 'DONORS_NOTIFIED'
