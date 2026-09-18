@@ -12,6 +12,7 @@ import donorEligibilityRouter from './routes/donorEligibilityRoutes.js';
 import donorRankingRouter from './routes/donorRankingRoutes.js';
 import donorDispatchRouter from './routes/donorDispatchRoutes.js';
 import notificationRouter from './routes/notificationRoutes.js';
+import devAuthRouter from './routes/devAuthRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,6 +68,8 @@ app.get('/api/health', (req, res) => {
     uptimeSeconds: Math.floor(process.uptime())
   });
 });
+
+app.use('/api/auth', devAuthRouter);
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user, organization: req.organization });
