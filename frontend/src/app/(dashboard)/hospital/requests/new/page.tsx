@@ -8,9 +8,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ShieldAlert,
-  Database,
   MapPin,
-  CheckCircle2,
 } from 'lucide-react';
 import { useAuth } from '../../../../../lib/supabase/auth-context';
 import { api } from '../../../../../lib/api/client';
@@ -30,7 +28,6 @@ export default function NewEmergencyRequestPage() {
   const [resourceType, setResourceType] = useState<ResourceType>('PACKED_RED_CELLS');
   const [urgency, setUrgency] = useState<UrgencyLevel>('CRITICAL');
 
-  // Default to organization hospital coordinates if available, or regional medical center coords
   const [latitude, setLatitude] = useState<number>(organization?.hospital?.latitude || 12.9716);
   const [longitude, setLongitude] = useState<number>(organization?.hospital?.longitude || 77.5946);
 
@@ -52,13 +49,12 @@ export default function NewEmergencyRequestPage() {
         blood_group: bloodGroup,
         quantity: Number(quantity),
         resource_type: resourceType,
-        urgency: urgency,
+        urgency,
         hospital_latitude: Number(latitude),
         hospital_longitude: Number(longitude),
       });
 
-      if (result && result.request?.id) {
-        // Immediately navigate to the resolution workspace
+      if (result?.request?.id) {
         router.push(`/hospital/requests/${result.request.id}`);
       } else {
         throw new Error('Failed to create emergency request record.');
@@ -89,15 +85,15 @@ export default function NewEmergencyRequestPage() {
           Broadcast Emergency Blood Request
         </h1>
         <p className="text-xs text-slate-400 mt-1">
-          Initiate priority allocation protocol across internal reserve, peer blood banks, and verified volunteer donor pool.
+          Initiate priority allocation across internal reserve, peer blood banks, and verified volunteer donors.
         </p>
       </div>
 
       <Card className="border-slate-800 bg-slate-900/90 shadow-2xl backdrop-blur-xl">
         <CardHeader>
-          <CardTitle className="text-base">Trauma Patient & Resource Specification</CardTitle>
+          <CardTitle className="text-base">Emergency Resource Specification</CardTitle>
           <CardDescription>
-            All requests immediately trigger automatic inventory reservations and SLA tracking timers.
+            The request is created first; resolution is then executed explicitly through the inventory-first pipeline.
           </CardDescription>
         </CardHeader>
 
@@ -118,7 +114,7 @@ export default function NewEmergencyRequestPage() {
                 onChange={(e) => setBloodGroup(e.target.value as BloodGroup)}
                 required
               >
-                <option value="O-">O Negative (Universal Donor - Critical)</option>
+                <option value="O-">O Negative</option>
                 <option value="O+">O Positive</option>
                 <option value="A-">A Negative</option>
                 <option value="A+">A Positive</option>
@@ -136,7 +132,7 @@ export default function NewEmergencyRequestPage() {
               >
                 <option value="PACKED_RED_CELLS">Packed Red Blood Cells (PRBC)</option>
                 <option value="WHOLE_BLOOD">Whole Blood</option>
-                <option value="PLATELETS">Platelet Concentrate (RDP/SDP)</option>
+                <option value="PLATELETS">Platelets</option>
                 <option value="FRESH_FROZEN_PLASMA">Fresh Frozen Plasma (FFP)</option>
               </Select>
             </div>
@@ -146,7 +142,7 @@ export default function NewEmergencyRequestPage() {
                 label="Requested Quantity (Units)"
                 type="number"
                 min={1}
-                max={20}
+                max={1000}
                 value={quantity}
                 onChange={(e) => setQuantity(Number(e.target.value))}
                 required
@@ -158,16 +154,17 @@ export default function NewEmergencyRequestPage() {
                 onChange={(e) => setUrgency(e.target.value as UrgencyLevel)}
                 required
               >
-                <option value="CRITICAL">CRITICAL — Severe Hemorrhage (&lt; 15 min)</option>
-                <option value="URGENT">URGENT — Urgent Surgery (&lt; 2 hours)</option>
-                <option value="STANDARD">STANDARD — Elective / Scheduled Reserve</option>
+                <option value="CRITICAL">CRITICAL — Immediate emergency</option>
+                <option value="HIGH">HIGH — Urgent surgery</option>
+                <option value="MEDIUM">MEDIUM — Priority request</option>
+                <option value="LOW">LOW — Standard reserve</option>
               </Select>
             </div>
 
             <div className="pt-4 border-t border-slate-800">
               <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-sky-400" />
-                Delivery Geocoordinates (Trauma Facility Location)
+                Delivery Geocoordinates
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Input
@@ -193,9 +190,7 @@ export default function NewEmergencyRequestPage() {
 
         <CardFooter className="flex justify-between items-center bg-slate-950/40 border-t border-slate-800/80 p-6">
           <Link href="/hospital/dashboard">
-            <Button variant="ghost" size="sm">
-              Cancel
-            </Button>
+            <Button variant="ghost" size="sm">Cancel</Button>
           </Link>
           <Button
             type="submit"
