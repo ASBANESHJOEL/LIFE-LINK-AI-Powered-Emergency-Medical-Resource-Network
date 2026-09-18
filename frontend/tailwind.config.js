@@ -1,6 +1,5 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ['class'],
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -9,30 +8,30 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: '#090d16',
+        background: '#f8fafc',
         surface: {
-          50: '#111827',
-          100: '#0f172a',
-          200: '#1e293b',
-          300: '#334155',
+          50: '#ffffff',
+          100: '#f8fafc',
+          200: '#f1f5f9',
+          300: '#e2e8f0',
         },
         primary: {
-          DEFAULT: '#dc2626',
-          hover: '#ef4444',
-          subtle: 'rgba(239, 68, 68, 0.12)',
+          DEFAULT: '#2563eb',
+          hover: '#1d4ed8',
+          subtle: 'rgba(37, 99, 235, 0.08)',
         },
         medical: {
-          blue: '#0284c7',
-          'blue-subtle': 'rgba(2, 132, 199, 0.12)',
-          emerald: '#10b981',
-          'emerald-subtle': 'rgba(16, 185, 129, 0.12)',
-          amber: '#f59e0b',
-          'amber-subtle': 'rgba(245, 158, 11, 0.12)',
+          blue: '#2563eb',
+          'blue-subtle': '#eff6ff',
+          emerald: '#16a34a',
+          'emerald-subtle': '#f0fdf4',
+          amber: '#d97706',
+          'amber-subtle': '#fffbeb',
           slate: '#0f172a',
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'sans-serif'],
       },
       animation: {
         'pulse-subtle': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
