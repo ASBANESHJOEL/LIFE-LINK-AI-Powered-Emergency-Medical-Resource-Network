@@ -64,7 +64,7 @@ function VerifyOtpContent() {
         </Link>
 
         <div className="mt-10">
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Verify your number</h1>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Verify your email</h1>
           <p className="mt-2 text-xs leading-5 text-slate-500">Enter the OTP sent to {email || 'your email'}.</p>
         </div>
 
