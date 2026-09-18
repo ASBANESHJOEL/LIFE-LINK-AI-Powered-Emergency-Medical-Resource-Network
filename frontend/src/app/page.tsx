@@ -1,173 +1,146 @@
 'use client';
 
-import React from 'react';
 import Link from 'next/link';
-import {
-  Activity,
-  ShieldCheck,
-  Truck,
-  Database,
-  Building2,
-  ArrowRight,
-  Sparkles,
-  CheckCircle2,
-  Lock,
-} from 'lucide-react';
+import { ArrowRight, Heart, Building2, Database, ShieldCheck, Menu, HelpCircle, Mail } from 'lucide-react';
 import { useAuth } from '../lib/supabase/auth-context';
-import { Button } from '../components/ui/button';
-import { Card, CardContent } from '../components/ui/card';
 
 export default function LandingPage() {
   const { user, isAuthenticated } = useAuth();
 
-  const getDashboardLink = () => {
-    if (!user) return '/login';
-    switch (user.role) {
-      case 'HOSPITAL_COORDINATOR':
-        return '/hospital/dashboard';
-      case 'BLOOD_BANK_OFFICER':
-        return '/blood-bank/dashboard';
-      case 'DONOR':
-        return '/donor/dashboard';
-      default:
-        return '/hospital/dashboard';
-    }
-  };
+  const dashboard = user?.role === 'HOSPITAL'
+    ? '/hospital/dashboard'
+    : user?.role === 'BLOOD_BANK'
+      ? '/blood-bank/dashboard'
+      : user?.role === 'DONOR'
+        ? '/donor/dashboard'
+        : user?.role === 'ADMIN' || user?.role === 'REGULATOR'
+          ? '/regulator/dashboard'
+          : '/login';
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] py-12 px-4">
-      {/* Platform Banner */}
-      <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-950/60 border border-red-800/60 text-red-300 text-xs font-semibold mb-6 animate-pulse">
-        <span className="h-2 w-2 rounded-full bg-red-500"></span>
-        CRITICAL EMERGENCY RESOURCE SYSTEM ACTIVE
-      </div>
-
-      {/* Main Hero Header */}
-      <h1 className="text-4xl sm:text-6xl font-black text-center tracking-tight text-white max-w-4xl leading-tight">
-        Zero-Latency Emergency <br />
-        <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-rose-400 to-sky-400">
-          Blood Resource Orchestration
-        </span>
-      </h1>
-
-      <p className="mt-6 text-base sm:text-lg text-slate-400 text-center max-w-2xl leading-relaxed">
-        LIFE-LINK automates trauma blood sourcing through a strict three-tier resolution
-        pipeline: immediate local inventory reservations, regional peer-bank transfers, and
-        predictive ML-ranked donor dispatches.
-      </p>
-
-      {/* Action Buttons */}
-      <div className="mt-8 flex flex-col sm:flex-row items-center gap-4">
-        {isAuthenticated ? (
-          <Link href={getDashboardLink()}>
-            <Button size="lg" variant="default" className="gap-2 px-8 text-base">
-              Enter Operations Console
-              <ArrowRight className="w-4 h-4" />
-            </Button>
+    <div className="lifelink-page">
+      <header className="public-header">
+        <div className="lifelink-container h-16 flex items-center justify-between">
+          <Link href="/" className="brand-mark">
+            <span className="brand-mark-icon"><span className="text-base">+</span></span>
+            <span className="brand-mark-word">LIFE LINK</span>
           </Link>
-        ) : (
-          <Link href="/login">
-            <Button size="lg" variant="default" className="gap-2 px-8 text-base">
-              <Lock className="w-4 h-4" />
-              Sign In with Medical OTP
-            </Button>
+          <nav className="hidden sm:flex items-center gap-7">
+            <Link className="public-nav-link active" href="/">Home</Link>
+            <Link className="public-nav-link" href="/about">About</Link>
+            <Link className="public-nav-link" href="/faq">FAQ</Link>
+            <Link className="public-nav-link" href="/contact">Contact</Link>
+          </nav>
+          <div className="flex items-center gap-2">
+            <Link href={isAuthenticated ? dashboard : '/login'} className="hidden sm:inline-flex h-9 px-4 rounded-lg bg-blue-600 text-white text-xs font-semibold items-center justify-center hover:bg-blue-700">
+              {isAuthenticated ? 'Dashboard' : 'Log in'}
+            </Link>
+            <Link href="/choose-role" className="inline-flex h-9 px-4 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold items-center justify-center hover:bg-slate-50">
+              Get started
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section className="lifelink-container grid lg:grid-cols-2 gap-12 items-center py-16 sm:py-24">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 border border-blue-100 px-3 py-1.5 text-[11px] font-semibold text-blue-700">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
+              Emergency medical resource network
+            </div>
+            <h1 className="mt-5 text-4xl sm:text-5xl font-extrabold tracking-tight leading-[1.08] text-slate-900">
+              Connect. Donate.<br />
+              <span className="text-blue-600">Save Lives.</span>
+            </h1>
+            <p className="mt-5 max-w-xl text-sm sm:text-base leading-7 text-slate-500">
+              LIFE-LINK brings hospitals, blood banks, and verified volunteer donors together so emergency blood requests can be coordinated through one trusted network.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <Link href="/choose-role" className="inline-flex h-11 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold items-center gap-2 shadow-sm">
+                Get Started <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link href="/about" className="inline-flex h-11 px-5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-sm font-semibold items-center">
+                Learn more
+              </Link>
+            </div>
+            <div className="mt-8 flex flex-wrap gap-5 text-xs text-slate-500">
+              <span className="flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-green-600" />Verified access</span>
+              <span className="flex items-center gap-2"><Heart className="w-4 h-4 text-red-500" />Donor coordination</span>
+              <span className="flex items-center gap-2"><Building2 className="w-4 h-4 text-blue-600" />Hospital network</span>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div className="mx-auto max-w-[460px] rounded-[28px] bg-gradient-to-b from-blue-50 to-white border border-blue-100 p-8 shadow-[0_25px_70px_rgba(37,99,235,.10)]">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="public-card p-5">
+                  <Heart className="w-6 h-6 text-red-500" />
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">Donors</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Verified volunteers available for compatible emergency requests.</p>
+                </div>
+                <div className="public-card p-5">
+                  <Database className="w-6 h-6 text-blue-600" />
+                  <h3 className="mt-3 text-sm font-bold text-slate-900">Blood banks</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Inventory and transfer coordination across the network.</p>
+                </div>
+                <div className="col-span-2 public-card p-5 flex items-center gap-4 bg-white">
+                  <div className="h-12 w-12 rounded-full bg-red-50 flex items-center justify-center"><Heart className="w-6 h-6 text-red-500 fill-current" /></div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-900">Emergency request</div>
+                    <div className="text-xs text-slate-500 mt-1">Hospital → LIFE-LINK → compatible resources</div>
+                  </div>
+                  <ArrowRight className="ml-auto w-5 h-5 text-blue-600" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="border-y border-slate-200 bg-white">
+          <div className="lifelink-container py-14">
+            <div className="text-center max-w-2xl mx-auto">
+              <p className="text-[11px] uppercase tracking-widest font-bold text-blue-600">One connected workflow</p>
+              <h2 className="mt-2 public-section-title">Resources coordinated when they matter</h2>
+              <p className="mt-3 public-section-copy">The platform supports the emergency journey from hospital request through inventory, peer-bank sourcing, and donor dispatch.</p>
+            </div>
+            <div className="mt-9 grid md:grid-cols-3 gap-5">
+              {[
+                { icon: Building2, title: 'Hospitals', text: 'Raise and track emergency blood requests.' },
+                { icon: Database, title: 'Blood banks', text: 'Share inventory and coordinate peer transfers.' },
+                { icon: Heart, title: 'Donors', text: 'Receive compatible emergency alerts and respond.' },
+              ].map(({icon: Icon, title, text}) => (
+                <div key={title} className="public-card p-6">
+                  <div className="h-10 w-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><Icon className="w-5 h-5" /></div>
+                  <h3 className="mt-4 text-base font-bold text-slate-900">{title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">{text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="lifelink-container py-12 flex flex-col sm:flex-row items-center justify-between gap-5">
+          <div>
+            <h2 className="text-xl font-extrabold text-slate-900">Ready to join LIFE-LINK?</h2>
+            <p className="mt-1 text-sm text-slate-500">Choose your role and continue to the secure passwordless flow.</p>
+          </div>
+          <Link href="/choose-role" className="inline-flex h-10 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold items-center gap-2">
+            Choose your role <ArrowRight className="w-4 h-4" />
           </Link>
-        )}
-        <a
-          href="#architecture"
-          className="text-sm font-semibold text-slate-400 hover:text-white px-4 py-2 transition-colors"
-        >
-          Explore Resolution Pipeline ↓
-        </a>
-      </div>
+        </section>
+      </main>
 
-      {/* 3-Tier Pipeline Section */}
-      <div id="architecture" className="mt-20 w-full max-w-5xl">
-        <div className="text-center mb-10">
-          <p className="text-xs font-bold uppercase tracking-widest text-sky-400 mb-2">
-            Architectural Hierarchy
-          </p>
-          <h2 className="text-2xl sm:text-3xl font-bold text-white">
-            Automated Sourcing Pipeline
-          </h2>
-          <p className="text-sm text-slate-400 mt-2">
-            Every emergency request progresses deterministically through 3 resolution layers
-          </p>
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="lifelink-container py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-xs text-slate-500">© {new Date().getFullYear()} LIFE-LINK. Connect. Donate. Save Lives.</div>
+          <div className="flex items-center gap-5 text-xs text-slate-500">
+            <Link href="/terms" className="hover:text-blue-600">Terms</Link>
+            <Link href="/privacy" className="hover:text-blue-600">Privacy</Link>
+            <Link href="/contact" className="flex items-center gap-1 hover:text-blue-600"><Mail className="w-3.5 h-3.5" />Contact</Link>
+          </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Tier 1 */}
-          <Card className="border-slate-800 bg-slate-900/60 hover:border-sky-500/50 transition-all">
-            <CardContent className="p-6">
-              <div className="h-10 w-10 rounded-lg bg-sky-950/80 border border-sky-800/60 flex items-center justify-center text-sky-400 mb-4">
-                <Database className="w-5 h-5" />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400 bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/40">
-                Tier 1 • Instant
-              </span>
-              <h3 className="text-lg font-bold text-white mt-3">Local Inventory Reservation</h3>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Directly queries the hospital and affiliated facility inventory. Available units are
-                immediately reserved and flagged to prevent double-allocation during surgery.
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Tier 2 */}
-          <Card className="border-slate-800 bg-slate-900/60 hover:border-amber-500/50 transition-all">
-            <CardContent className="p-6">
-              <div className="h-10 w-10 rounded-lg bg-amber-950/80 border border-amber-800/60 flex items-center justify-center text-amber-400 mb-4">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-800/40">
-                Tier 2 • Network
-              </span>
-              <h3 className="text-lg font-bold text-white mt-3">Peer Blood Bank Transfer</h3>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Surrounding regional blood banks are scanned based on geodesic proximity. Transfer
-                offers are computed and accepted with 1-click coordinator verification.
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Tier 3 */}
-          <Card className="border-slate-800 bg-slate-900/60 hover:border-red-500/50 transition-all">
-            <CardContent className="p-6">
-              <div className="h-10 w-10 rounded-lg bg-red-950/80 border border-red-800/60 flex items-center justify-center text-red-400 mb-4">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-red-400 bg-red-950/60 px-2 py-0.5 rounded border border-red-800/40">
-                Tier 3 • Predictive ML
-              </span>
-              <h3 className="text-lg font-bold text-white mt-3">ML Donor Dispatch</h3>
-              <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-                Eligible verified volunteer donors are evaluated by the frozen Logistic Regression V1
-                model. Ranked batches are notified in real-time with OSRM transit tracking.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      {/* Trust & Compliance Strip */}
-      <div className="mt-16 pt-8 border-t border-slate-800/80 flex flex-wrap justify-center items-center gap-8 text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Role-Enforced Row-Level Security</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Lock className="w-4 h-4 text-sky-400" />
-          <span>Supabase 8-Digit Cryptographic OTP</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Activity className="w-4 h-4 text-red-400" />
-          <span>Logistic Regression V1 ML Scoring</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Truck className="w-4 h-4 text-amber-400" />
-          <span>OSRM Live Transit Routing</span>
-        </div>
-      </div>
+      </footer>
     </div>
   );
 }
