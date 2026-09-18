@@ -4,21 +4,31 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:5000": "vite --port 5000",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "dev:5000": "next dev -p 5000",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
+    "@types/node": "^26.6.1",
+    "autoprefixer": "^10.6.1",
+    "clsx": "^2.1.1",
     "lucide-react": "^0.475.0",
+    "maplibre-gl": "^5.6.1",
+    "next": "^14.2.24",
+    "postcss": "^8.5.28",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.29.0",
-    "maplibre-gl": "^5.6.1"
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.9.3",
     "vite": "^5.4.14"
   }
 }
