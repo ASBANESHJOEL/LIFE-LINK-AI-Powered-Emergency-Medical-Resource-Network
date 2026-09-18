@@ -1,34 +1,19 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import {
-  Activity,
-  AlertOctagon,
-  Building2,
-  Database,
-  Bell,
-  LogOut,
-  Menu,
-  X,
-  User,
-  ShieldCheck,
-  Truck,
-  HeartHandshake,
-  FileText,
-  Navigation,
-  CheckCircle2,
-} from 'lucide-react';
+import { Activity, AlertOctagon, Building2, Database, Bell, LogOut, Menu, X, ShieldCheck, Navigation, HeartHandshake } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
 import { api } from '../../lib/api/client';
-import { AppNotification } from '../../types/notifications';
 
-interface NavItem {
-  label: string;
-  href: string;
-  icon: React.ReactNode;
-}
+interface NavItem { label: string; href: string; icon: React.ReactNode; }
+
+const publicPaths = new Set([
+  '/', '/login', '/verify-otp', '/choose-role', '/signup',
+  '/about', '/faq', '/contact', '/terms', '/privacy',
+  '/inactive', '/unauthorized', '/unprovisioned'
+]);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -37,64 +22,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
-  // Poll or fetch notifications count when user is authenticated
   useEffect(() => {
     if (!isAuthenticated) return;
-
     let mounted = true;
-    async function loadUnread() {
+    const loadUnread = async () => {
       try {
         const res = await api.notifications.list({ unreadOnly: true, limit: 1 });
-        if (mounted && res?.pagination) {
-          setUnreadNotificationsCount(res.pagination.unreadCount || 0);
-        }
-      } catch (err) {
-        // Silent catch for background notifications counter
-      }
-    }
-
-    loadUnread();
-    const interval = setInterval(loadUnread, 30000); // Check every 30s
-    return () => {
-      mounted = false;
-      clearInterval(interval);
+        if (mounted) setUnreadNotificationsCount(res?.pagination?.unreadCount || 0);
+      } catch { /* background count is non-blocking */ }
     };
+    loadUnread();
+    const interval = setInterval(loadUnread, 30000);
+    return () => { mounted = false; clearInterval(interval); };
   }, [isAuthenticated]);
 
-  // Route protection redirect: if not loading and not authenticated, redirect to /login
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && pathname !== '/login' && pathname !== '/verify-otp' && pathname !== '/') {
+    if (!isLoading && !isAuthenticated && !publicPaths.has(pathname)) {
       router.push('/login');
     }
   }, [isLoading, isAuthenticated, pathname, router]);
 
-  // Generate navigation items based on verified role
   const getNavItems = (): NavItem[] => {
     if (!user) return [];
-
     switch (user.role) {
-      case 'HOSPITAL_COORDINATOR':
+      case 'HOSPITAL':
         return [
-          { label: 'Command Center', href: '/hospital/dashboard', icon: <Activity className="w-4 h-4" /> },
+          { label: 'Dashboard', href: '/hospital/dashboard', icon: <Activity className="w-4 h-4" /> },
           { label: 'Emergency Requests', href: '/hospital/requests', icon: <AlertOctagon className="w-4 h-4" /> },
-          { label: 'New Request', href: '/hospital/requests/new', icon: <AlertOctagon className="w-4 h-4 text-red-400" /> },
-          { label: 'Inventory Reserve', href: '/hospital/inventory', icon: <Database className="w-4 h-4" /> },
+          { label: 'New Request', href: '/hospital/requests/new', icon: <AlertOctagon className="w-4 h-4" /> },
+          { label: 'Inventory', href: '/hospital/inventory', icon: <Database className="w-4 h-4" /> },
           { label: 'Peer Transfers', href: '/hospital/transfers', icon: <Building2 className="w-4 h-4" /> },
         ];
-      case 'BLOOD_BANK_OFFICER':
+      case 'BLOOD_BANK':
         return [
-          { label: 'Bank Dashboard', href: '/blood-bank/dashboard', icon: <Activity className="w-4 h-4" /> },
+          { label: 'Dashboard', href: '/blood-bank/dashboard', icon: <Activity className="w-4 h-4" /> },
           { label: 'Blood Inventory', href: '/blood-bank/inventory', icon: <Database className="w-4 h-4" /> },
           { label: 'Transfer Requests', href: '/blood-bank/transfers', icon: <HeartHandshake className="w-4 h-4" /> },
         ];
       case 'DONOR':
         return [
-          { label: 'Donor Hub', href: '/donor/dashboard', icon: <Activity className="w-4 h-4" /> },
-          { label: 'Emergency Alerts', href: '/donor/alerts', icon: <AlertOctagon className="w-4 h-4 text-red-400" /> },
+          { label: 'Dashboard', href: '/donor/dashboard', icon: <Activity className="w-4 h-4" /> },
+          { label: 'Emergency Alerts', href: '/donor/alerts', icon: <AlertOctagon className="w-4 h-4" /> },
           { label: 'Live Dispatches', href: '/donor/dispatches', icon: <Navigation className="w-4 h-4" /> },
         ];
+      case 'ADMIN':
       case 'REGULATOR':
-      case 'SUPER_ADMIN':
         return [
           { label: 'Audit Dashboard', href: '/regulator/dashboard', icon: <Activity className="w-4 h-4" /> },
           { label: 'Network Operations', href: '/hospital/requests', icon: <Building2 className="w-4 h-4" /> },
@@ -105,193 +77,84 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   const navItems = getNavItems();
-
-  const handleSignOut = async () => {
-    await signOut();
-    router.push('/login');
-  };
+  const handleSignOut = async () => { await signOut(); router.push('/login'); };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#090d16] flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 border-4 border-red-500 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs text-slate-400 font-semibold tracking-wider uppercase">
-            Securing LIFE-LINK Operational Session...
-          </p>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="mt-3 text-xs font-medium text-slate-500">Preparing LIFE-LINK...</p>
         </div>
       </div>
     );
   }
 
-  // If on login or verify-otp pages, don't show full dashboard shell
-  if (pathname === '/login' || pathname === '/verify-otp' || pathname === '/') {
-    return <>{children}</>;
-  }
+  if (publicPaths.has(pathname)) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col">
-      {/* Top Header */}
-      <header className="sticky top-0 z-40 h-16 border-b border-slate-800 bg-slate-950/80 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-            aria-label="Toggle navigation menu"
-          >
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+      <header className="sticky top-0 z-40 h-16 border-b border-slate-200 bg-white/95 backdrop-blur px-4 sm:px-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50" aria-label="Toggle navigation">
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center text-white font-black text-lg shadow-md shadow-red-900/40">
-              +
-            </div>
-            <div className="flex flex-col">
-              <span className="font-extrabold text-base tracking-tight text-white flex items-center gap-1.5">
-                LIFE-LINK
-                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-red-950 border border-red-800/60 text-red-300">
-                  CRITICAL
-                </span>
-              </span>
-              <span className="text-[10px] text-slate-400 leading-none">Emergency Medical Resource Network</span>
-            </div>
+          <Link href="/" className="brand-mark">
+            <span className="brand-mark-icon"><span className="text-base">+</span></span>
+            <span className="brand-mark-word">LIFE LINK</span>
           </Link>
+          <span className="hidden lg:block text-xs text-slate-400 border-l border-slate-200 pl-3">Emergency Medical Resource Network</span>
         </div>
 
-        {/* User Info & Organization Context */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-4">
           {organization && (
-            <div className="hidden lg:flex flex-col text-right pr-3 border-r border-slate-800">
-              <span className="text-xs font-semibold text-white">
-                {organization.hospital?.name || organization.bloodBank?.name || 'Authorized Member'}
-              </span>
-              <span className="text-[10px] text-slate-400 uppercase font-medium">
-                {organization.hospital ? 'Trauma Center' : organization.bloodBank ? 'Regional Blood Bank' : 'Network Operations'}
-              </span>
+            <div className="hidden lg:block text-right border-r border-slate-200 pr-4">
+              <div className="text-xs font-semibold text-slate-800">{organization.hospital?.name || organization.bloodBank?.name || 'Authorized Member'}</div>
+              <div className="text-[10px] text-slate-400">{organization.hospital ? 'Hospital' : organization.bloodBank ? 'Blood Bank' : 'Network Member'}</div>
             </div>
           )}
-
-          {/* User Role Badge */}
-          {user && (
-            <div className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800">
-              <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-              <span className="text-[11px] font-semibold text-slate-300">
-                {user.role.replace(/_/g, ' ')}
-              </span>
-            </div>
-          )}
-
-          {/* Notifications Bell */}
-          <Link
-            href="/notifications"
-            className="relative p-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors"
-            title="System Notifications"
-          >
+          {user && <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold"><ShieldCheck className="w-3.5 h-3.5" />{user.role.replace(/_/g, ' ')}</div>}
+          <Link href="/notifications" className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800" aria-label="Notifications">
             <Bell className="w-4 h-4" />
-            {unreadNotificationsCount > 0 && (
-              <span className="absolute top-1 right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white ring-2 ring-slate-950 animate-pulse">
-                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-              </span>
-            )}
+            {unreadNotificationsCount > 0 && <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}</span>}
           </Link>
-
-          {/* User Email & Sign Out */}
-          <div className="flex items-center gap-2 pl-2">
-            <Link
-              href="/profile"
-              className="hidden md:flex text-xs text-slate-400 hover:text-slate-200 transition-colors"
-              title="User Profile"
-            >
-              {user?.email}
-            </Link>
-            <button
-              onClick={handleSignOut}
-              className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-800/80 transition-colors"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          <Link href="/profile" className="hidden md:block max-w-48 truncate text-xs text-slate-500 hover:text-blue-600">{user?.email}</Link>
+          <button onClick={handleSignOut} className="p-2 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50" title="Sign out"><LogOut className="w-4 h-4" /></button>
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Sidebar */}
-        <aside className="hidden md:flex flex-col w-64 border-r border-slate-800/80 bg-slate-950/40 p-4 shrink-0">
-          <div className="text-[10px] uppercase font-bold text-slate-400 px-3 mb-2 tracking-wider">
-            Operational Modules
-          </div>
-          <nav className="flex flex-col space-y-1">
-            {navItems.map((item) => {
-              const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href));
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-sky-600/15 text-sky-300 border border-sky-500/30'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900/60'
-                  }`}
-                >
-                  {item.icon}
-                  {item.label}
-                </Link>
-              );
+      <div className="flex flex-1">
+        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
+          <p className="px-3 mb-2 text-[10px] uppercase tracking-wider font-bold text-slate-400">Workspace</p>
+          <nav className="space-y-1">
+            {navItems.map(item => {
+              const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              return <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>{item.icon}{item.label}</Link>;
             })}
           </nav>
-
-          <div className="mt-auto pt-4 border-t border-slate-800/60 flex flex-col gap-2">
-            <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400">
-              <div className="flex items-center gap-1.5 text-emerald-400 font-semibold mb-1">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                Emergency Network Active
-              </div>
-              <p className="text-[10px] text-slate-400 leading-tight">
-                Continuous latency monitoring active across hospital nodes.
-              </p>
+          <div className="mt-auto pt-4 border-t border-slate-100">
+            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700"><span className="h-2 w-2 rounded-full bg-green-500" />Network active</div>
+              <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Emergency coordination services are available.</p>
             </div>
           </div>
         </aside>
 
-        {/* Mobile Slideout Navigation */}
         {mobileMenuOpen && (
-          <div
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm md:hidden"
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            <div
-              className="w-64 h-full bg-slate-950 border-r border-slate-800 p-4 flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
-                <span className="font-bold text-sm text-white">Navigation</span>
-                <button
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="p-1 rounded text-slate-400 hover:text-white"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+          <div className="fixed inset-0 z-50 bg-slate-900/20 md:hidden" onClick={() => setMobileMenuOpen(false)}>
+            <div className="w-72 h-full bg-white border-r border-slate-200 p-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                <span className="font-bold text-sm text-slate-900">Workspace</span>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-500"><X className="w-5 h-5" /></button>
               </div>
-              <nav className="flex flex-col space-y-1">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:text-white hover:bg-slate-900"
-                  >
-                    {item.icon}
-                    {item.label}
-                  </Link>
-                ))}
+              <nav className="space-y-1">
+                {navItems.map(item => <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50">{item.icon}{item.label}</Link>)}
               </nav>
             </div>
           </div>
         )}
 
-        {/* Main Workspace Content */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#090d16]">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
