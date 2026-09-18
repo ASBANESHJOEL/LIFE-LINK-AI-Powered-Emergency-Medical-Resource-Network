@@ -6,6 +6,17 @@ interface BloodTypeBadgeProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+const displayBloodGroup: Record<string, string> = {
+  A_POSITIVE: 'A+',
+  A_NEGATIVE: 'A-',
+  B_POSITIVE: 'B+',
+  B_NEGATIVE: 'B-',
+  AB_POSITIVE: 'AB+',
+  AB_NEGATIVE: 'AB-',
+  O_POSITIVE: 'O+',
+  O_NEGATIVE: 'O-',
+};
+
 export function BloodTypeBadge({ bloodGroup, size = 'md' }: BloodTypeBadgeProps) {
   const sizeClasses = {
     sm: 'text-xs px-2 py-0.5 min-w-[2.25rem]',
@@ -17,7 +28,7 @@ export function BloodTypeBadge({ bloodGroup, size = 'md' }: BloodTypeBadgeProps)
     <span
       className={`inline-flex items-center justify-center font-black tracking-wider rounded-md border border-red-600/40 bg-gradient-to-br from-red-950/80 to-slate-900 text-red-300 shadow-inner ${sizeClasses[size]}`}
     >
-      {bloodGroup}
+      {displayBloodGroup[bloodGroup] ?? bloodGroup}
     </span>
   );
 }
