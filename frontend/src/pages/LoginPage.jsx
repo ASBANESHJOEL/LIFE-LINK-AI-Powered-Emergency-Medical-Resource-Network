@@ -192,31 +192,6 @@ export function LoginPage() {
               )}
             </button>
 
-            {import.meta.env.DEV && (
-              <div style={{ marginTop: '14px', textAlign: 'center' }}>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ width: '100%', fontSize: '0.875rem' }}
-                  disabled={loading}
-                  onClick={async () => {
-                    setLoading(true);
-                    setError('');
-                    try {
-                      await loginWithMock('DONOR', 'dev-donor@lifelink.test');
-                      navigate('/tracking-test');
-                    } catch (err) {
-                      setError('Mock login failed: ' + err.message);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                >
-                  🧪 1-Click Mock Login (Test Tracking)
-                </button>
-              </div>
-            )}
-
             <div style={{ marginTop: '24px', textAlign: 'center' }}>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>
                 Protected by Supabase Auth passwordless OTP.
