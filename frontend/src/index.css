@@ -269,3 +269,27 @@ h1, h2, h3, h4 {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.tracking-test-page { min-height: 100vh; padding: 28px; max-width: 1500px; margin: 0 auto; }
+.tracking-test-header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; margin-bottom: 20px; }
+.tracking-test-header h1 { margin: 10px 0 4px; font-size: 1.8rem; }
+.tracking-test-header p { color: var(--text-muted); }
+.tracking-test-session { display: flex; flex-direction: column; align-items: flex-end; color: var(--text-muted); font-size: .85rem; }
+.tracking-test-controls { padding: 18px; margin-bottom: 20px; }
+.tracking-test-input-row { display: flex; gap: 10px; margin-top: 8px; }
+.tracking-test-input-row .form-input { flex: 1; }
+.tracking-test-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; }
+.tracking-map-card { padding: 8px; overflow: hidden; }
+.tracking-map { height: 560px; border-radius: 12px; overflow: hidden; }
+.tracking-metrics { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.tracking-status, .tracking-metric { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--bg-card-border); }
+.tracking-status span, .tracking-metric span, .tracking-coordinates span { color: var(--text-muted); font-size: .82rem; }
+.tracking-status strong { color: var(--accent-emerald); }
+.tracking-coordinates { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.tracking-coordinates code { color: #cbd5e1; font-size: .75rem; margin-bottom: 7px; word-break: break-all; }
+.tracking-full-button { width: 100%; margin-top: auto; }
+.tracking-json { margin-top: 20px; padding: 20px; }
+.tracking-json h2 { font-size: 1rem; margin-bottom: 12px; }
+.tracking-json pre { max-height: 320px; overflow: auto; background: rgba(0,0,0,.25); padding: 14px; border-radius: 10px; color: #cbd5e1; font-size: .72rem; }
+@media (max-width: 900px) { .tracking-test-header { flex-direction: column; } .tracking-test-session { align-items: flex-start; } .tracking-test-grid { grid-template-columns: 1fr; } .tracking-map { height: 420px; } }
+@media (max-width: 600px) { .tracking-test-page { padding: 16px; } .tracking-test-input-row { flex-direction: column; } }
