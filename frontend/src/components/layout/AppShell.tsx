@@ -17,6 +17,7 @@ const publicPaths = new Set([
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const currentPath = pathname ?? '/';
   const router = useRouter();
   const { user, organization, signOut, isAuthenticated, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -37,10 +38,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !publicPaths.has(pathname)) {
+    if (!isLoading && !isAuthenticated && !publicPaths.has(currentPath)) {
       router.push('/login');
     }
-  }, [isLoading, isAuthenticated, pathname, router]);
+  }, [isLoading, isAuthenticated, currentPath, router]);
 
   const getNavItems = (): NavItem[] => {
     if (!user) return [];
@@ -128,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="px-3 mb-2 text-[10px] uppercase tracking-wider font-bold text-slate-400">Workspace</p>
           <nav className="space-y-1">
             {navItems.map(item => {
-              const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              const active = currentPath === item.href || currentPath.startsWith(item.href + '/');
               return <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>{item.icon}{item.label}</Link>;
             })}
           </nav>
