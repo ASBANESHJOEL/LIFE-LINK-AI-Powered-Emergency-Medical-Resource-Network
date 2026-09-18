@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { resolveDevToken } from '../services/devAuthService.js';
 
 /**
  * Validates the Supabase access token and resolves the trusted
@@ -23,7 +24,15 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    // 1. Verify token with Supabase Auth
+    // Strictly local/dev-only authentication harness. It is disabled unless
+    // explicitly enabled and can never be used when NODE_ENV=production.
+    const devUser = resolveDevToken(token);
+    if (devUser) {
+      req.user = devUser;
+      req.organization = null;
+      return next();
+    }
+
     const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token);
     if (authError || !authData?.user) {
       return res.status(401).json({
@@ -34,8 +43,6 @@ export async function requireAuth(req, res, next) {
 
     const authUser = authData.user;
 
-    // 2. Resolve application user from public.users
-    // public.users.id must match auth.users.id by design
     const { data: dbUser, error: dbError } = await supabaseAdmin
       .from('users')
       .select('id, email, phone, role, is_active, is_synthetic, created_at, last_login_at')
@@ -50,7 +57,6 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    // 3. Unprovisioned Account Handling
     if (!dbUser) {
       return res.status(403).json({
         error: 'ACCOUNT_NOT_PROVISIONED',
@@ -59,7 +65,6 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    // 4. Inactive User Check
     if (dbUser.is_active === false) {
       return res.status(403).json({
         error: 'ACCOUNT_INACTIVE',
@@ -67,7 +72,6 @@ export async function requireAuth(req, res, next) {
       });
     }
 
-    // 5. Attach trusted identity to request (never trusting client headers/body)
     req.user = {
       id: dbUser.id,
       email: dbUser.email || authUser.email,
@@ -77,7 +81,6 @@ export async function requireAuth(req, res, next) {
       is_synthetic: dbUser.is_synthetic
     };
 
-    // 6. Organization Membership Resolution (for HOSPITAL and BLOOD_BANK)
     req.organization = null;
     if (dbUser.role === 'HOSPITAL' || dbUser.role === 'BLOOD_BANK') {
       const { data: orgMember, error: orgError } = await supabaseAdmin
@@ -121,10 +124,6 @@ export async function requireAuth(req, res, next) {
   }
 }
 
-/**
- * Reusable role-authorization middleware.
- * Validates that req.user.role exists in the permitted roles.
- */
 export function requireRole(...permittedRoles) {
   return (req, res, next) => {
     if (!req.user) {
