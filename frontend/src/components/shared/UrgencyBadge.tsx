@@ -15,18 +15,27 @@ export function UrgencyBadge({ urgency }: UrgencyBadgeProps) {
           CRITICAL EMERGENCY
         </span>
       );
+    case 'HIGH':
     case 'URGENT':
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-amber-950/80 text-amber-300 border border-amber-800/60">
           <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-          URGENT (WITHIN 2H)
+          HIGH PRIORITY
         </span>
       );
+    case 'MEDIUM':
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-amber-950/70 text-amber-300 border border-amber-800/50">
+          <span className="h-2 w-2 rounded-full bg-amber-400"></span>
+          MEDIUM PRIORITY
+        </span>
+      );
+    case 'LOW':
     case 'STANDARD':
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
           <span className="h-2 w-2 rounded-full bg-slate-400"></span>
-          STANDARD SCHEDULE
+          STANDARD PRIORITY
         </span>
       );
     default:
