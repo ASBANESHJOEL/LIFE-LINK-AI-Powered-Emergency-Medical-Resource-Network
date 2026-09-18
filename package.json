@@ -1,0 +1,14 @@
+{
+  "name": "life-link",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LIFE-LINK AI-Powered Emergency Medical Resource Network",
+  "scripts": {
+    "dev": "npm --prefix backend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:frontend:5000": "npm --prefix frontend run dev:5000",
+    "build:frontend": "npm --prefix frontend run build",
+    "test:backend": "npm --prefix backend test"
+  }
+}

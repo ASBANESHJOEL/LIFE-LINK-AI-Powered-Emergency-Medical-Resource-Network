@@ -1,6 +1,6 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import app from '../src/index.js';
+import app from '../src/app.js';
 
 const server = app.listen(0);
 const baseUrl = await new Promise((resolve) => {
@@ -67,6 +67,15 @@ test('protected emergency-request endpoint rejects unauthenticated access', asyn
 
 test('protected peer-transfer acceptance endpoint rejects unauthenticated access', async () => {
   const { response, body } = await request('/api/transfer-offers/00000000-0000-4000-8000-000000000000/accept', {
+    method: 'POST'
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(body.error, 'UNAUTHORIZED');
+});
+
+test('protected donor-dispatch next-batch endpoint rejects unauthenticated access', async () => {
+  const { response, body } = await request('/api/requests/00000000-0000-4000-8000-000000000000/donor-dispatches/next-batch', {
     method: 'POST'
   });
 

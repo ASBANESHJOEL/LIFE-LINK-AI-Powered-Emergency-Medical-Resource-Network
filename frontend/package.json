@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:5000": "vite --port 5000",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -13,7 +14,8 @@
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.29.0"
+    "react-router-dom": "^6.29.0",
+    "maplibre-gl": "^5.6.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

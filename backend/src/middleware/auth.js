@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { isDevAuthEnabled, validateMockToken } from '../services/devAuthService.js';
 
 /**
  * Validates the Supabase access token and resolves the trusted
@@ -21,6 +22,16 @@ export async function requireAuth(req, res, next) {
         error: 'UNAUTHORIZED',
         message: 'Bearer token is missing'
       });
+    }
+
+    // Development Mock Auth token validation (strictly disabled in production)
+    if (isDevAuthEnabled()) {
+      const mockUser = validateMockToken(token);
+      if (mockUser) {
+        req.user = mockUser;
+        req.organization = null;
+        return next();
+      }
     }
 
     // 1. Verify token with Supabase Auth
