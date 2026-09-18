@@ -44,7 +44,7 @@ export function buildOsrmRouteUrl(origin, destination) {
   return `${base}/route/v1/${profile}/${coordinates}?overview=full&geometries=geojson&steps=false`;
 }
 
-async function requestOsrmRoute(origin, destination) {
+export async function requestOsrmRoute(origin, destination) {
   const controller = new AbortController();
   const timeoutMs = Math.min(Math.max(Number(process.env.OSRM_TIMEOUT_MS || DEFAULT_TIMEOUT_MS), 1000), 10000);
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
