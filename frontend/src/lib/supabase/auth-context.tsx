@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase } from './client';
-import { api } from '../api/client';
-import { AuthContextType, OrganizationMembership, UserProfile } from '../../types/auth';
+import { api, ApiClientError } from '../api/client';
+import { AuthContextType, OrganizationMembership, UserProfile, ProfileStatus } from '../../types/auth';
+import { normalizeEmail, clearPendingEmail } from './pending-email';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -12,18 +13,73 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [organization, setOrganization] = useState<OrganizationMembership | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileStatus, setProfileStatus] = useState<ProfileStatus>('LOADING');
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const fetchProfile = useCallback(async (accessToken: string) => {
+  const fetchProfile = useCallback(async (accessToken: string): Promise<ProfileStatus> => {
     try {
       const data = await api.auth.getMe();
       if (data && data.user) {
         setUser(data.user);
         setOrganization(data.organization || null);
+        setProfileStatus('ACTIVE');
+        setAuthError(null);
+        return 'ACTIVE';
+      } else {
+        setUser(null);
+        setOrganization(null);
+        setProfileStatus('ERROR');
+        setAuthError('Invalid user profile structure returned from server.');
+        return 'ERROR';
       }
-    } catch (err) {
-      console.error('[LIFE-LINK Auth] Failed to fetch user profile:', err);
-      setUser(null);
-      setOrganization(null);
+    } catch (err: unknown) {
+      console.error('[LIFE-LINK Auth] Profile resolution error:', err);
+
+      if (err instanceof ApiClientError) {
+        if (err.status === 403) {
+          const details = err.details as { error?: string; message?: string } | undefined;
+          if (details?.error === 'ACCOUNT_NOT_PROVISIONED') {
+            setUser(null);
+            setOrganization(null);
+            setProfileStatus('UNPROVISIONED');
+            setAuthError(
+              details.message ||
+                'Your email is authenticated, but your account has not been provisioned in the LIFE-LINK medical registry.'
+            );
+            return 'UNPROVISIONED';
+          } else if (details?.error === 'ACCOUNT_INACTIVE') {
+            setUser(null);
+            setOrganization(null);
+            setProfileStatus('INACTIVE');
+            setAuthError(
+              details.message ||
+                'Your LIFE-LINK account has been deactivated by regional policy. Access denied.'
+            );
+            return 'INACTIVE';
+          } else {
+            setUser(null);
+            setOrganization(null);
+            setProfileStatus('ERROR');
+            setAuthError(err.message || 'Access denied.');
+            return 'ERROR';
+          }
+        } else if (err.status === 401) {
+          // Token rejected as invalid or expired by backend
+          setUser(null);
+          setOrganization(null);
+          setToken(null);
+          setProfileStatus('UNAUTHENTICATED');
+          setAuthError('Your session has expired. Please log in again.');
+          await supabase.auth.signOut().catch(() => {});
+          return 'UNAUTHENTICATED';
+        }
+      }
+
+      // Network, server timeout or 500 error: preserve the authenticated token
+      // so temporary infrastructure issues do not destroy a valid session
+      setProfileStatus('ERROR');
+      setAuthError('Unable to connect to the authentication service. Please check your network.');
+      return 'ERROR';
     }
   }, []);
 
@@ -36,6 +92,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setOrganization(null);
       setToken(null);
+      setProfileStatus('UNAUTHENTICATED');
+      setAuthError(null);
     }
   }, [fetchProfile]);
 
@@ -48,9 +106,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (mounted && session?.access_token) {
           setToken(session.access_token);
           await fetchProfile(session.access_token);
+        } else if (mounted) {
+          setProfileStatus('UNAUTHENTICATED');
         }
       } catch (err) {
         console.error('[LIFE-LINK Auth] Session initialization error:', err);
+        if (mounted) {
+          setProfileStatus('UNAUTHENTICATED');
+        }
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -63,6 +126,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
+      if (event === 'SIGNED_OUT') {
+        setToken(null);
+        setUser(null);
+        setOrganization(null);
+        setProfileStatus('UNAUTHENTICATED');
+        setAuthError(null);
+        setIsLoading(false);
+        return;
+      }
+
       if (session?.access_token) {
         setToken(session.access_token);
         await fetchProfile(session.access_token);
@@ -70,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setToken(null);
         setUser(null);
         setOrganization(null);
+        setProfileStatus('UNAUTHENTICATED');
       }
       setIsLoading(false);
     });
@@ -80,16 +154,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [fetchProfile]);
 
-  const signInWithOtp = async (email: string): Promise<{ success: boolean; error?: string }> => {
+  const signInWithOtp = async (
+    email: string,
+    options?: { shouldCreateUser?: boolean }
+  ): Promise<{ success: boolean; error?: string }> => {
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail) {
+      return { success: false, error: 'Please provide a valid email address.' };
+    }
+
     try {
+      const shouldCreate = options?.shouldCreateUser ?? false;
       const { error } = await supabase.auth.signInWithOtp({
-        email: email.trim().toLowerCase(),
+        email: cleanEmail,
         options: {
-          shouldCreateUser: false,
+          shouldCreateUser: shouldCreate,
         },
       });
 
       if (error) {
+        const lower = error.message.toLowerCase();
+        if (lower.includes('signups not allowed') || lower.includes('user not found')) {
+          return {
+            success: false,
+            error: 'This email is not registered with LIFE-LINK. Please create an account or contact your administrator.',
+          };
+        }
+        if (lower.includes('rate limit') || lower.includes('security purposes')) {
+          return {
+            success: false,
+            error: 'Too many requests. Please wait a moment before requesting another verification code.',
+          };
+        }
         return { success: false, error: error.message };
       }
 
@@ -103,24 +199,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifyOtp = async (
     email: string,
     otpCode: string
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; profileStatus?: ProfileStatus }> => {
+    const cleanEmail = normalizeEmail(email);
+    const cleanToken = otpCode.trim();
+
+    if (!cleanEmail) {
+      return { success: false, error: 'Email address is required for verification.' };
+    }
+
+    if (!/^\d{6,8}$/.test(cleanToken)) {
+      return { success: false, error: 'Verification code must be between 6 and 8 digits.' };
+    }
+
     try {
       const { data, error } = await supabase.auth.verifyOtp({
-        email: email.trim().toLowerCase(),
-        token: otpCode.trim(),
+        email: cleanEmail,
+        token: cleanToken,
         type: 'email',
       });
 
       if (error) {
-        return { success: false, error: error.message };
+        const lower = error.message.toLowerCase();
+        let userFriendly = error.message;
+
+        if (lower.includes('token has expired') || lower.includes('invalid') || lower.includes('expired')) {
+          userFriendly =
+            'The verification code is invalid or has expired. If you recently requested a new code, please ensure you use the latest one received.';
+        } else if (lower.includes('rate limit') || lower.includes('security purposes')) {
+          userFriendly = 'Too many failed attempts. Please wait a moment before trying again.';
+        }
+
+        return { success: false, error: userFriendly };
       }
 
       if (data.session?.access_token) {
         setToken(data.session.access_token);
-        await fetchProfile(data.session.access_token);
+        const status = await fetchProfile(data.session.access_token);
+        clearPendingEmail();
+        return { success: true, profileStatus: status };
       }
 
-      return { success: true };
+      clearPendingEmail();
+      return { success: true, profileStatus: 'ACTIVE' };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Invalid or expired OTP code';
       return { success: false, error: message };
@@ -129,6 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     try {
+      clearPendingEmail();
       await supabase.auth.signOut();
     } catch (err) {
       console.error('[LIFE-LINK Auth] Sign out error:', err);
@@ -136,6 +257,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
       setOrganization(null);
       setToken(null);
+      setProfileStatus('UNAUTHENTICATED');
+      setAuthError(null);
     }
   };
 
@@ -144,7 +267,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     organization,
     token,
     isLoading,
-    isAuthenticated: !!user && !!token,
+    isAuthenticated: !!user && !!token && profileStatus === 'ACTIVE',
+    profileStatus,
+    authError,
     signInWithOtp,
     verifyOtp,
     signOut,

@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const currentPath = pathname ?? '/';
   const router = useRouter();
-  const { user, organization, signOut, isAuthenticated, isLoading } = useAuth();
+  const { user, organization, signOut, isAuthenticated, isLoading, profileStatus } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
@@ -38,10 +38,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !publicPaths.has(currentPath)) {
+    if (isLoading) return;
+    if (publicPaths.has(currentPath)) return;
+
+    if (profileStatus === 'UNPROVISIONED') {
+      router.push('/unprovisioned');
+      return;
+    }
+
+    if (profileStatus === 'INACTIVE') {
+      router.push('/inactive');
+      return;
+    }
+
+    if (!isAuthenticated) {
       router.push('/login');
     }
-  }, [isLoading, isAuthenticated, currentPath, router]);
+  }, [isLoading, isAuthenticated, profileStatus, currentPath, router]);
 
   const getNavItems = (): NavItem[] => {
     if (!user) return [];

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowRight, ChevronLeft, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
+import { normalizeEmail, savePendingEmail } from '../../lib/supabase/pending-email';
 
 function SignupContent() {
   const router = useRouter();
@@ -19,13 +20,17 @@ function SignupContent() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = email.trim().toLowerCase();
+    const clean = normalizeEmail(email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) { setError('Please enter a valid email address.'); return; }
     setLoading(true); setError('');
-    const result = await signInWithOtp(clean);
+    const result = await signInWithOtp(clean, { shouldCreateUser: true });
     setLoading(false);
-    if (result.success) router.push('/verify-otp?email=' + encodeURIComponent(clean));
-    else setError(result.error || 'Unable to send the verification code.');
+    if (result.success) {
+      savePendingEmail(clean);
+      router.push('/verify-otp?email=' + encodeURIComponent(clean));
+    } else {
+      setError(result.error || 'Unable to send the verification code.');
+    }
   };
 
   return <div className="lifelink-page min-h-screen flex items-center justify-center px-4 py-10">

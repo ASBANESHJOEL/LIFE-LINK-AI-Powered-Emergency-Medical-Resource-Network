@@ -1,33 +1,42 @@
+'use client';
+
 import React from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { UserX, ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../components/ui/card';
+import { useAuth } from '../../lib/supabase/auth-context';
 
 export default function InactiveAccountPage() {
+  const router = useRouter();
+  const { signOut, authError } = useAuth();
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
+
   return (
-    <div className="min-h-[calc(100vh-8rem)] flex items-center justify-center p-4">
-      <Card className="max-w-md w-full border-amber-900/60 bg-slate-900/90 text-center">
+    <div className="lifelink-page min-h-screen flex items-center justify-center p-4">
+      <Card className="max-w-md w-full border-amber-200 bg-white text-center shadow-sm">
         <CardHeader>
-          <div className="mx-auto h-12 w-12 rounded-full bg-amber-950/80 border border-amber-800 flex items-center justify-center text-amber-400 mb-2">
+          <div className="mx-auto h-12 w-12 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mb-2">
             <UserX className="w-6 h-6" />
           </div>
-          <CardTitle className="justify-center text-amber-300">Account Deactivated</CardTitle>
-          <CardDescription>
-            Your account credentials exist, but access is currently marked inactive by network policy.
+          <CardTitle className="justify-center text-slate-900 font-bold">Account Deactivated</CardTitle>
+          <CardDescription className="text-slate-500 text-xs">
+            {authError || 'Your account credentials exist, but access is currently deactivated by network policy.'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-xs text-slate-400">
-            For medical safety, credentials not audited within the annual review window are automatically
-            placed on standby. Contact regional emergency compliance to reactivate your credentials.
+          <p className="text-xs text-slate-500 leading-relaxed">
+            For medical compliance and safety, accounts not audited within the active window are automatically
+            placed on standby. Please contact regional emergency network compliance to reactivate access.
           </p>
-          <Link href="/login">
-            <Button variant="outline" className="w-full">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Sign in with another account
-            </Button>
-          </Link>
+          <Button variant="outline" onClick={handleSignOut} className="w-full text-slate-700 border-slate-200 hover:bg-slate-50">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Sign in with another account
+          </Button>
         </CardContent>
       </Card>
     </div>

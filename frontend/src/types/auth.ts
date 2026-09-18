@@ -44,14 +44,30 @@ export interface AuthUserResponse {
   organization: OrganizationMembership | null;
 }
 
+export type ProfileStatus =
+  | 'LOADING'
+  | 'ACTIVE'
+  | 'UNPROVISIONED'
+  | 'INACTIVE'
+  | 'ERROR'
+  | 'UNAUTHENTICATED';
+
 export interface AuthContextType {
   user: UserProfile | null;
   organization: OrganizationMembership | null;
   token: string | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  signInWithOtp: (email: string) => Promise<{ success: boolean; error?: string }>;
-  verifyOtp: (email: string, token: string) => Promise<{ success: boolean; error?: string }>;
+  profileStatus: ProfileStatus;
+  authError: string | null;
+  signInWithOtp: (
+    email: string,
+    options?: { shouldCreateUser?: boolean }
+  ) => Promise<{ success: boolean; error?: string }>;
+  verifyOtp: (
+    email: string,
+    token: string
+  ) => Promise<{ success: boolean; error?: string; profileStatus?: ProfileStatus }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }

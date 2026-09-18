@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck, AlertCircle, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
+import { normalizeEmail, savePendingEmail } from '../../lib/supabase/pending-email';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,17 +16,21 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = normalizeEmail(email);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setErrorMessage('Please enter a valid email address.');
       return;
     }
     setIsLoading(true);
     setErrorMessage(null);
-    const result = await signInWithOtp(cleanEmail);
+    const result = await signInWithOtp(cleanEmail, { shouldCreateUser: false });
     setIsLoading(false);
-    if (result.success) router.push('/verify-otp?email=' + encodeURIComponent(cleanEmail));
-    else setErrorMessage(result.error || 'Unable to send the verification code.');
+    if (result.success) {
+      savePendingEmail(cleanEmail);
+      router.push('/verify-otp?email=' + encodeURIComponent(cleanEmail));
+    } else {
+      setErrorMessage(result.error || 'Unable to send the verification code.');
+    }
   };
 
   return (
