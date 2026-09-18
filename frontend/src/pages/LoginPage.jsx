@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Mail, ShieldCheck, ArrowRight, RotateCw, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function LoginPage() {
-  const { signInWithOtp, verifyOtp, loginWithMock, user, role, profileStatus, authError } = useAuth();
+  const { signInWithOtp, verifyOtp, user, role, profileStatus, authError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -162,7 +162,7 @@ export function LoginPage() {
                   id="email"
                   type="email"
                   className="form-input"
-                  placeholder="name@hospital.org or donor@lifelink.test"
+                  placeholder="name@hospital.org"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
