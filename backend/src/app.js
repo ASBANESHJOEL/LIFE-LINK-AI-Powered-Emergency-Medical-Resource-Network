@@ -13,6 +13,7 @@ import donorRankingRouter from './routes/donorRankingRoutes.js';
 import donorDispatchRouter from './routes/donorDispatchRoutes.js';
 import notificationRouter from './routes/notificationRoutes.js';
 import devAuthRouter from './routes/devAuthRoutes.js';
+import authRouter from './routes/authRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,6 +73,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api', devAuthRouter);
+app.use('/api', authRouter);
 
 app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: req.user, organization: req.organization });

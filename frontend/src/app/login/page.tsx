@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowRight, ShieldCheck, AlertCircle, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
-import { normalizeEmail, savePendingEmail } from '../../lib/supabase/pending-email';
+import { normalizeEmail, savePendingEmail, saveAuthIntent } from '../../lib/supabase/pending-email';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,6 +27,7 @@ export default function LoginPage() {
     setIsLoading(false);
     if (result.success) {
       savePendingEmail(cleanEmail);
+      saveAuthIntent('login');
       router.push('/verify-otp?email=' + encodeURIComponent(cleanEmail));
     } else {
       setErrorMessage(result.error || 'Unable to send the verification code.');

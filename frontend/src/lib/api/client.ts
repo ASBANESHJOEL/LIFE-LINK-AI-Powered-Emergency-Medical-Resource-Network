@@ -82,6 +82,14 @@ const resourceTypeToApi: Record<string, string> = {
 export const api = {
   auth: {
     getMe: () => request<AuthUserResponse>('/api/auth/me'),
+    checkSignup: (email: string) =>
+      request<{ exists: boolean; role?: string; is_active?: boolean; message?: string }>(
+        '/api/auth/signup-check',
+        {
+          method: 'POST',
+          body: JSON.stringify({ email }),
+        }
+      ),
   },
 
   requests: {

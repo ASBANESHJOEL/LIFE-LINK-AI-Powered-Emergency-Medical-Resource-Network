@@ -3,14 +3,28 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowRight, ShieldCheck, ChevronLeft, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowRight, ShieldCheck, ChevronLeft, AlertCircle, RefreshCw, LogIn, UserCheck } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
-import { normalizeEmail, getPendingEmail, savePendingEmail } from '../../lib/supabase/pending-email';
+import {
+  normalizeEmail,
+  getPendingEmail,
+  savePendingEmail,
+  getAuthIntent,
+  clearAuthIntent,
+} from '../../lib/supabase/pending-email';
 
 function VerifyOtpContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { verifyOtp, signInWithOtp, user, isAuthenticated, profileStatus, isLoading: isAuthLoading } = useAuth();
+  const {
+    verifyOtp,
+    signInWithOtp,
+    user,
+    isAuthenticated,
+    profileStatus,
+    isLoading: isAuthLoading,
+    signOut,
+  } = useAuth();
 
   const urlEmail = searchParams.get('email') || '';
   const [email, setEmail] = useState<string>('');
@@ -20,6 +34,20 @@ function VerifyOtpContent() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resentMessage, setResentMessage] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState<number>(0);
+
+  // State when existing account is intercepted on signup attempt
+  const [existingUserIntercepted, setExistingUserIntercepted] = useState<{
+    email: string;
+    role: string;
+  } | null>(null);
+
+  const formatRole = (r?: string) => {
+    if (!r) return 'Network Member';
+    if (r === 'BLOOD_BANK') return 'Blood Bank';
+    if (r === 'ADMIN') return 'Administrator';
+    if (r === 'REGULATOR') return 'Regulator';
+    return r.charAt(0) + r.slice(1).toLowerCase();
+  };
 
   // Recover email from URL or client session storage
   useEffect(() => {
@@ -57,6 +85,21 @@ function VerifyOtpContent() {
     }
 
     if (isAuthenticated && user && profileStatus === 'ACTIVE') {
+      const intent = getAuthIntent();
+
+      // If user came via signup flow but already has an existing active profile:
+      // Do NOT silently authenticate them into the dashboard as if signup succeeded.
+      if (intent.intent === 'signup') {
+        setExistingUserIntercepted({
+          email: user.email || email,
+          role: user.role,
+        });
+        clearAuthIntent();
+        signOut().catch(() => {});
+        return;
+      }
+
+      // Normal login flow
       switch (user.role) {
         case 'HOSPITAL':
           router.push('/hospital/dashboard');
@@ -75,7 +118,7 @@ function VerifyOtpContent() {
           router.push('/');
       }
     }
-  }, [isAuthenticated, user, profileStatus, isAuthLoading, router]);
+  }, [isAuthenticated, user, profileStatus, isAuthLoading, email, router, signOut]);
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +180,70 @@ function VerifyOtpContent() {
       setErrorMessage(result.error || 'Unable to resend verification code. Please try again later.');
     }
   };
+
+  // State: Existing user intercepted during a signup attempt
+  if (existingUserIntercepted) {
+    const roleText = formatRole(existingUserIntercepted.role);
+
+    return (
+      <div className="lifelink-page flex min-h-screen items-center justify-center px-4 py-10">
+        <div className="auth-surface p-6 sm:p-9">
+          <Link href="/" className="brand-mark">
+            <span className="brand-mark-icon">
+              <span className="text-base">+</span>
+            </span>
+            <span className="brand-mark-word">LIFE LINK</span>
+          </Link>
+
+          <div className="mt-8 text-center sm:text-left">
+            <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600 mb-3">
+              <UserCheck className="w-5 h-5" />
+            </div>
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+              An account already exists with this email.
+            </h1>
+            <p className="mt-2 text-xs leading-5 text-slate-500">
+              You&apos;re already registered as a {roleText}. Please sign in to access your account.
+            </p>
+          </div>
+
+          <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-700">
+            <span className="text-slate-500">Account: </span>
+            <strong className="text-slate-900">{existingUserIntercepted.email}</strong>
+            <div className="mt-1 text-[11px] text-slate-500">
+              Role: <span className="font-semibold text-slate-800">{roleText}</span>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <Link
+              href={`/login?email=${encodeURIComponent(existingUserIntercepted.email)}`}
+              className="h-11 w-full rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              Sign in to continue
+            </Link>
+
+            <Link
+              href="/signup"
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center justify-center transition-colors"
+            >
+              Register with a different email
+            </Link>
+          </div>
+
+          <div className="mt-7 pt-4 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-700"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Back to home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const hasNoEmail = !email;
 
