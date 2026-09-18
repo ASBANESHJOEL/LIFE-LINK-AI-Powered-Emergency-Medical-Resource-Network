@@ -19,11 +19,19 @@ export function TrackingTestPage() {
   const donorMarkerRef = useRef(null);
   const hospitalMarkerRef = useRef(null);
 
+  const [devToken, setDevToken] = useState('');
+  const [devProfile, setDevProfile] = useState(null);
+  const [devEmail, setDevEmail] = useState('dev-donor@lifelink.test');
+  const [devOtp, setDevOtp] = useState('00000000');
+  const [devLoggingIn, setDevLoggingIn] = useState(false);
   const [dispatchId, setDispatchId] = useState(INITIAL_DISPATCH_ID);
   const [route, setRoute] = useState(null);
   const [loading, setLoading] = useState(false);
   const [simulating, setSimulating] = useState(false);
   const [error, setError] = useState('');
+
+  const authToken = session?.access_token || devToken;
+  const authProfile = userProfile || devProfile;
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
@@ -111,13 +119,41 @@ export function TrackingTestPage() {
     else map.once('load', renderRoute);
   }, [route]);
 
+  async function loginAsDevDonor() {
+    setDevLoggingIn(true);
+    setError('');
+
+    try {
+      const response = await fetch('/api/auth/dev-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: devEmail.trim(), otp: devOtp.trim() })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.message || payload.error || `HTTP ${response.status}`);
+      }
+
+      setDevToken(payload.token);
+      setDevProfile(payload.user);
+      setError('');
+    } catch (err) {
+      setDevToken('');
+      setDevProfile(null);
+      setError(err.message || 'Development login failed.');
+    } finally {
+      setDevLoggingIn(false);
+    }
+  }
+
   async function loadRoute() {
     if (!dispatchId.trim()) {
       setError('Enter a donor dispatch UUID first.');
       return;
     }
-    if (!session?.access_token) {
-      setError('Sign in with a provisioned LIFE-LINK account first.');
+    if (!authToken) {
+      setError('Sign in or use the development test login first.');
       return;
     }
 
@@ -127,7 +163,7 @@ export function TrackingTestPage() {
     try {
       const response = await fetch(
         `/api/donor-dispatches/${encodeURIComponent(dispatchId.trim())}/route`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } }
+        { headers: { Authorization: `Bearer ${authToken}` } }
       );
       const payload = await response.json().catch(() => ({}));
 
@@ -145,7 +181,7 @@ export function TrackingTestPage() {
   }
 
   async function simulateLocation() {
-    if (!route || !session?.access_token) return;
+    if (!route || !authToken) return;
 
     setSimulating(true);
     setError('');
@@ -161,7 +197,7 @@ export function TrackingTestPage() {
         {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${session.access_token}`,
+            Authorization: `Bearer ${authToken}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ latitude, longitude })
@@ -192,10 +228,44 @@ export function TrackingTestPage() {
           <p>MapLibre + OSRM integration harness for LIFE-LINK tracking.</p>
         </div>
         <div className="tracking-test-session">
-          <strong>{userProfile?.email || 'Not authenticated'}</strong>
-          <span>{userProfile?.role || '—'}</span>
+          <strong>{authProfile?.email || 'Not authenticated'}</strong>
+          <span>{authProfile?.role || '—'}</span>
         </div>
       </div>
+
+      {import.meta.env.DEV && (
+        <div className="tracking-test-controls glass-panel">
+          <div>
+            <span className="role-badge badge-ADMIN">LOCAL DEV AUTH</span>
+            <h2 style={{ marginTop: '10px' }}>Mock Donor Login</h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Local-only bypass for tracking integration tests. This endpoint is disabled when NODE_ENV=production.
+            </p>
+          </div>
+          <div className="tracking-test-input-row">
+            <input
+              className="form-input"
+              type="email"
+              value={devEmail}
+              onChange={(event) => setDevEmail(event.target.value)}
+              placeholder="Development donor email"
+              disabled={devLoggingIn}
+            />
+            <input
+              className="form-input"
+              type="text"
+              value={devOtp}
+              onChange={(event) => setDevOtp(event.target.value.replace(/D/g, '').slice(0, 8))}
+              placeholder="8-digit test OTP"
+              maxLength={8}
+              disabled={devLoggingIn}
+            />
+            <button className="btn btn-secondary" onClick={loginAsDevDonor} disabled={devLoggingIn}>
+              {devLoggingIn ? 'Signing in…' : 'Use Mock Donor'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="tracking-test-controls glass-panel">
         <label className="form-label" htmlFor="dispatch-id">Donor Dispatch UUID</label>
