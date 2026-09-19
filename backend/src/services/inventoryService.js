@@ -21,10 +21,23 @@ export async function reserveBloodInventory({ requestId, bloodGroup, componentTy
   const allocations = data || [];
   const allocatedUnits = allocations.reduce((sum, row) => sum + Number(row.allocated_units || 0), 0);
 
+  let remainingUnits;
+  if (allocations.length > 0) {
+    remainingUnits = Number(allocations[allocations.length - 1].remaining_request_units ?? 0);
+  } else {
+    const { data: currentAllocations } = await supabaseAdmin
+      .from('request_inventory_allocations')
+      .select('allocated_units')
+      .eq('request_id', requestId)
+      .eq('status', 'RESERVED');
+    const alreadyReserved = (currentAllocations || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+    remainingUnits = Math.max(0, Number(quantity) - alreadyReserved);
+  }
+
   return {
     allocations,
     allocatedUnits,
-    remainingUnits: Math.max(0, quantity - allocatedUnits),
-    fullyReserved: allocatedUnits >= quantity
+    remainingUnits,
+    fullyReserved: remainingUnits === 0
   };
 }
