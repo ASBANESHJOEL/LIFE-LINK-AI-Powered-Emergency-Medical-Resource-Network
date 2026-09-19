@@ -1,13 +1,33 @@
+import './setup.js';
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import app from '../src/app.js';
+import { supabaseAdmin } from '../src/lib/supabaseAdmin.js';
 
 const server = app.listen(0);
 const baseUrl = await new Promise((resolve) => {
   server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
 });
 
-after(() => server.close());
+const originalFrom = supabaseAdmin.from;
+
+after(() => {
+  supabaseAdmin.from = originalFrom;
+  server.close();
+});
+
+supabaseAdmin.from = (table) => {
+  if (table === 'users') {
+    return {
+      select: () => ({
+        ilike: () => ({
+          maybeSingle: async () => ({ data: null, error: null })
+        })
+      })
+    };
+  }
+  return originalFrom.call(supabaseAdmin, table);
+};
 
 async function post(path, body) {
   const response = await fetch(`${baseUrl}${path}`, {

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "test": "node --import ./test/setup.js --test"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
