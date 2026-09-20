@@ -217,7 +217,36 @@ router.post('/:requestId/cancel', requireAuth, requireRole('HOSPITAL'), async (r
     if (error.code === 'INVALID_REQUEST_ID') {
       return res.status(400).json({ error: 'INVALID_REQUEST_ID', message: error.message });
     }
+    if (error.code === 'INVALID_REQUEST_STATE' || error.code === '55000') {
+      return res.status(409).json({ error: 'INVALID_REQUEST_STATE', message: error.message });
+    }
     return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to cancel emergency request' });
+  }
+});
+
+router.post('/:requestId/expire', requireAuth, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    if (!UUID_RE.test(requestId)) {
+      return res.status(400).json({ error: 'INVALID_REQUEST_ID', message: 'requestId must be a valid UUID' });
+    }
+
+    const { expireEmergencyRequestService } = await import('../services/donorDispatchService.js');
+    const result = await expireEmergencyRequestService({
+      requestId,
+      userId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Expire emergency request failed:', error);
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_REQUEST_STATE' || error.code === '55000') {
+      return res.status(409).json({ error: 'INVALID_REQUEST_STATE', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to expire emergency request' });
   }
 });
 

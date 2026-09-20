@@ -1974,8 +1974,15 @@ export async function cancelEmergencyRequestService({ requestId, hospitalId, use
       requestId: request.id,
       status: request.status,
       isAlreadyCancelled: true,
-      releasedDispatchCount: 0
+      releasedDispatchCount: 0,
+      releasedInventoryUnits: 0
     };
+  }
+
+  if (request.status === 'FULFILLED') {
+    const err = new Error('Cannot cancel an emergency request that is already fulfilled');
+    err.code = 'INVALID_REQUEST_STATE';
+    throw err;
   }
 
   // 1. Try cancel_emergency_request RPC
@@ -1990,10 +1997,19 @@ export async function cancelEmergencyRequestService({ requestId, hospitalId, use
         requestId: rpcData[0].request_id,
         status: rpcData[0].request_status,
         isAlreadyCancelled: false,
-        releasedDispatchCount: Number(rpcData[0].released_dispatch_count || 0)
+        releasedDispatchCount: Number(rpcData[0].released_dispatch_count || 0),
+        releasedInventoryUnits: Number(rpcData[0].released_inventory_units || 0)
       };
     }
-  } catch (e) {}
+
+    if (rpcErr && rpcErr.code === '55000') {
+      const err = new Error(rpcErr.message || 'Cannot cancel emergency request');
+      err.code = 'INVALID_REQUEST_STATE';
+      throw err;
+    }
+  } catch (err) {
+    if (err.code === 'INVALID_REQUEST_STATE') throw err;
+  }
 
   // 2. Fallback direct operations
   const nowIso = new Date().toISOString();
@@ -2001,6 +2017,41 @@ export async function cancelEmergencyRequestService({ requestId, hospitalId, use
     .from('emergency_requests')
     .update({ status: 'CANCELLED' })
     .eq('id', requestId);
+
+  // Release any reserved inventory
+  const { data: allocs } = await supabaseAdmin
+    .from('request_inventory_allocations')
+    .select('id, inventory_id, allocated_units')
+    .eq('request_id', requestId)
+    .eq('status', 'RESERVED');
+
+  let releasedUnits = 0;
+  for (const alloc of allocs || []) {
+    releasedUnits += Number(alloc.allocated_units || 0);
+    const { data: bi } = await supabaseAdmin
+      .from('blood_inventory')
+      .select('available_units, reserved_units')
+      .eq('id', alloc.inventory_id)
+      .maybeSingle();
+    if (bi) {
+      await supabaseAdmin.from('blood_inventory').update({
+        available_units: bi.available_units + alloc.allocated_units,
+        reserved_units: Math.max(0, bi.reserved_units - alloc.allocated_units),
+        last_updated: nowIso
+      }).eq('id', alloc.inventory_id);
+    }
+    await supabaseAdmin.from('request_inventory_allocations').update({
+      status: 'RELEASED',
+      released_at: nowIso
+    }).eq('id', alloc.id);
+  }
+
+  // Cancel pending transfer offers
+  await supabaseAdmin
+    .from('blood_bank_transfer_offers')
+    .update({ status: 'CANCELLED' })
+    .eq('request_id', requestId)
+    .eq('status', 'OFFERED');
 
   const { data: released } = await supabaseAdmin
     .from('donor_dispatches')
@@ -2017,6 +2068,135 @@ export async function cancelEmergencyRequestService({ requestId, hospitalId, use
     requestId: request.id,
     status: 'CANCELLED',
     isAlreadyCancelled: false,
-    releasedDispatchCount: (released || []).length
+    releasedDispatchCount: (released || []).length,
+    releasedInventoryUnits: releasedUnits
+  };
+}
+
+/**
+ * Emergency Request Expiry Service.
+ * Transitions request to EXPIRED and safely releases any active donor dispatches,
+ * reserved inventory, and pending transfer offers.
+ */
+export async function expireEmergencyRequestService({ requestId, userId }) {
+  if (!requestId || !UUID_RE.test(requestId)) {
+    const err = new Error('requestId must be a valid UUID');
+    err.code = 'INVALID_REQUEST_ID';
+    throw err;
+  }
+
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, status')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqErr || !request) {
+    const err = new Error('Emergency request not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  if (request.status === 'EXPIRED') {
+    return {
+      requestId: request.id,
+      status: request.status,
+      isAlreadyExpired: true,
+      releasedDispatchCount: 0,
+      releasedInventoryUnits: 0
+    };
+  }
+
+  if (['FULFILLED', 'CANCELLED'].includes(request.status)) {
+    const err = new Error(`Cannot expire request in status ${request.status}`);
+    err.code = 'INVALID_REQUEST_STATE';
+    throw err;
+  }
+
+  // Try expire_emergency_request RPC
+  try {
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('expire_emergency_request', {
+      p_request_id: requestId,
+      p_actor_user_id: userId || null
+    });
+
+    if (!rpcErr && rpcData?.length) {
+      return {
+        requestId: rpcData[0].request_id,
+        status: rpcData[0].request_status,
+        isAlreadyExpired: false,
+        releasedDispatchCount: Number(rpcData[0].released_dispatch_count || 0),
+        releasedInventoryUnits: Number(rpcData[0].released_inventory_units || 0)
+      };
+    }
+
+    if (rpcErr && rpcErr.code === '55000') {
+      const err = new Error(rpcErr.message || 'Cannot expire emergency request');
+      err.code = 'INVALID_REQUEST_STATE';
+      throw err;
+    }
+  } catch (err) {
+    if (err.code === 'INVALID_REQUEST_STATE') throw err;
+  }
+
+  // Fallback direct operations
+  const nowIso = new Date().toISOString();
+  await supabaseAdmin
+    .from('emergency_requests')
+    .update({ status: 'EXPIRED' })
+    .eq('id', requestId);
+
+  // Release inventory
+  const { data: allocs } = await supabaseAdmin
+    .from('request_inventory_allocations')
+    .select('id, inventory_id, allocated_units')
+    .eq('request_id', requestId)
+    .eq('status', 'RESERVED');
+
+  let releasedUnits = 0;
+  for (const alloc of allocs || []) {
+    releasedUnits += Number(alloc.allocated_units || 0);
+    const { data: bi } = await supabaseAdmin
+      .from('blood_inventory')
+      .select('available_units, reserved_units')
+      .eq('id', alloc.inventory_id)
+      .maybeSingle();
+    if (bi) {
+      await supabaseAdmin.from('blood_inventory').update({
+        available_units: bi.available_units + alloc.allocated_units,
+        reserved_units: Math.max(0, bi.reserved_units - alloc.allocated_units),
+        last_updated: nowIso
+      }).eq('id', alloc.inventory_id);
+    }
+    await supabaseAdmin.from('request_inventory_allocations').update({
+      status: 'RELEASED',
+      released_at: nowIso
+    }).eq('id', alloc.id);
+  }
+
+  // Expire pending offers
+  await supabaseAdmin
+    .from('blood_bank_transfer_offers')
+    .update({ status: 'EXPIRED' })
+    .eq('request_id', requestId)
+    .eq('status', 'OFFERED');
+
+  const { data: released } = await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      status: 'CANCELLED',
+      cancellation_reason: 'REQUEST_EXPIRED',
+      cancelled_at: nowIso
+    })
+    .eq('request_id', requestId)
+    .in('status', ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED'])
+    .select('id');
+
+  return {
+    requestId: request.id,
+    status: 'EXPIRED',
+    isAlreadyExpired: false,
+    releasedDispatchCount: (released || []).length,
+    releasedInventoryUnits: releasedUnits
   };
 }
