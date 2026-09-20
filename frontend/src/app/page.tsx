@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { ArrowRight, Heart, Building2, Database, ShieldCheck, Menu, HelpCircle, Mail } from 'lucide-react';
 import { useAuth } from '../lib/supabase/auth-context';
+import { BrandLogo } from '../components/shared/BrandLogo';
 
 export default function LandingPage() {
   const { user, isAuthenticated } = useAuth();
@@ -21,10 +22,7 @@ export default function LandingPage() {
     <div className="lifelink-page">
       <header className="public-header">
         <div className="lifelink-container h-16 flex items-center justify-between">
-          <Link href="/" className="brand-mark">
-            <span className="brand-mark-icon"><span className="text-base">+</span></span>
-            <span className="brand-mark-word">LIFE LINK</span>
-          </Link>
+          <BrandLogo href="/" />
           <nav className="hidden sm:flex items-center gap-7">
             <Link className="public-nav-link active" href="/">Home</Link>
             <Link className="public-nav-link" href="/about">About</Link>
