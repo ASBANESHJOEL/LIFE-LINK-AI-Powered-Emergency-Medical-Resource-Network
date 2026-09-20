@@ -1,11 +1,12 @@
 import { BloodGroup, ResourceType, UrgencyLevel } from './requests';
 
 export type TransferOfferStatus =
-  | 'PENDING'
+  | 'OFFERED'
   | 'ACCEPTED'
-  | 'REJECTED'
-  | 'EXPIRED'
-  | 'COMPLETED';
+  | 'IN_TRANSIT'
+  | 'DELIVERED'
+  | 'CANCELLED'
+  | 'EXPIRED';
 
 export interface BloodBankTransferOffer {
   id: string;
@@ -28,7 +29,7 @@ export interface BloodBankTransferOffer {
     urgency: UrgencyLevel;
     hospital_id: string;
     hospitals?: {
-      name: string;
+      hospital_name: string;
     };
   };
 }
