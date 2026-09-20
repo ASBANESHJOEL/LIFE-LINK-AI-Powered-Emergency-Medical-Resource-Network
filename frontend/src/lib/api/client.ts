@@ -183,6 +183,16 @@ export const api = {
       ),
   },
 
+  bloodBank: {
+    getInventory: () => request<{ inventory: any[] }>('/api/blood-bank/inventory'),
+    addInventoryLot: (payload: { bloodGroup: string; componentType: string; units: number; criticalLevel: number; expiryDate: string }) =>
+      request<{ inventory: any }>('/api/blood-bank/inventory/lots', { method: 'POST', body: JSON.stringify(payload) }),
+    updateInventory: (inventoryId: string, payload: { deltaUnits?: number; criticalLevel?: number; expiryDate?: string }) =>
+      request<{ inventory: any }>(`/api/blood-bank/inventory/${inventoryId}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    getRefillRequests: () => request<{ requests: any[] }>('/api/blood-bank/refill-requests'),
+    createRefillRequest: (payload: { bloodGroup: string; componentType: string; requiredUnits: number; priority: string }) =>
+      request<{ request: any }>('/api/blood-bank/refill-requests', { method: 'POST', body: JSON.stringify(payload) }),
+  },
   transfers: {
     accept: (offerId: string) =>
       request<AcceptTransferOfferResponse>(`/api/transfer-offers/${offerId}/accept`, {
