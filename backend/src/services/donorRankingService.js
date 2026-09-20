@@ -100,7 +100,17 @@ async function predict(features) {
       err.code = 'ML_INFERENCE_FAILED';
       throw err;
     }
-    return await response.json();
+    const data = await response.json();
+    const isValidObject = data !== null && typeof data === 'object' && !Array.isArray(data);
+    const hasValidProbability = isValidObject && Number.isFinite(data.probability);
+    const hasValidPrediction = isValidObject && data.prediction !== undefined && data.prediction !== null && (data.prediction === 0 || data.prediction === 1 || Number.isFinite(data.prediction));
+
+    if (!isValidObject || !hasValidProbability || !hasValidPrediction) {
+      const err = new Error('ML inference returned malformed payload');
+      err.code = 'ML_INFERENCE_FAILED';
+      throw err;
+    }
+    return data;
   } catch (error) {
     if (error.name === 'AbortError') {
       const err = new Error('ML inference timed out');

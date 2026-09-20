@@ -39,7 +39,7 @@ const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(v
  * The next resolution layer will perform atomic inventory/peer-bank
  * allocation so a request cannot oversell stock under concurrent requests.
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
   try {
     if (req.user?.role !== 'HOSPITAL') {
       return res.status(403).json({
@@ -160,6 +160,26 @@ router.post('/', async (req, res) => {
         error: 'REQUEST_CREATION_FAILED',
         message: 'Failed to create emergency request'
       });
+    }
+
+    // Step 4/5: Emergency lifecycle observability - structured audit record
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        actor_user_id: req.user.id,
+        action: 'EMERGENCY_REQUEST_CREATED',
+        entity_type: 'emergency_request',
+        entity_id: request.id,
+        metadata: {
+          hospital_id: hospital.id,
+          blood_group: request.blood_group,
+          resource_type: request.resource_type,
+          quantity: request.quantity,
+          urgency: request.urgency
+        },
+        is_synthetic: Boolean(request.is_synthetic)
+      });
+    } catch (auditErr) {
+      console.error('Failed to record audit log for emergency request creation:', auditErr);
     }
 
     return res.status(201).json({

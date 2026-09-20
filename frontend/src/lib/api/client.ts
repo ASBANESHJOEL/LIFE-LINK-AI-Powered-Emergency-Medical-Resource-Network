@@ -50,9 +50,18 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const body = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
-    const message =
-      (typeof body === 'object' && body !== null && (body.error || body.message)) ||
-      `Request failed with status ${response.status}`;
+    let message = `Request failed with status ${response.status}`;
+    if (typeof body === 'object' && body !== null) {
+      if (typeof body.error === 'string') {
+        message = body.message ? `${body.error}: ${body.message}` : body.error;
+      } else if (typeof body.error === 'object' && body.error !== null) {
+        message = body.error.message || body.error.code || message;
+      } else if (typeof body.message === 'string') {
+        message = body.message;
+      }
+    } else if (typeof body === 'string' && body.trim()) {
+      message = body.trim();
+    }
     throw new ApiClientError(message, response.status, body);
   }
 
