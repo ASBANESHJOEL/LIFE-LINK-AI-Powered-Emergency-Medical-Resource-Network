@@ -4,11 +4,11 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, MapPin, RefreshCw, Activity } from 'lucide-react';
-import { api } from '../../../../../../lib/api/client';
-import { Button } from '../../../../../../components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../../../../components/ui/card';
-import { StatusBadge } from '../../../../../../components/shared/StatusBadge';
-import { RouteTrackingMap } from '../../../../../../components/shared/RouteTrackingMap';
+import { api } from '../../../../../lib/api/client';
+import { Button } from '../../../../../components/ui/button';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../../../components/ui/card';
+import { StatusBadge } from '../../../../../components/shared/StatusBadge';
+import { RouteTrackingMap } from '../../../../../components/shared/RouteTrackingMap';
 
 export default function HospitalTrackingDetailPage() {
   const params = useParams();
