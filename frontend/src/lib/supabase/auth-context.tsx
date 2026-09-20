@@ -85,7 +85,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const getStoredDevToken = () => {
+    if (typeof window === 'undefined') return null;
+    return window.localStorage.getItem('lifelink_dev_token');
+  };
+
   const refreshProfile = useCallback(async () => {
+    const devToken = getStoredDevToken();
+    if (devToken) {
+      setToken(devToken);
+      await fetchProfile(devToken);
+      return;
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       setToken(session.access_token);
@@ -104,10 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     async function initSession() {
       try {
+        const devToken = getStoredDevToken();
         const { data: { session } } = await supabase.auth.getSession();
-        if (mounted && session?.access_token) {
-          setToken(session.access_token);
-          await fetchProfile(session.access_token);
+        const accessToken = devToken || session?.access_token;
+        if (mounted && accessToken) {
+          setToken(accessToken);
+          await fetchProfile(accessToken);
         } else if (mounted) {
           setProfileStatus('UNAUTHENTICATED');
         }
@@ -155,6 +169,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
+
+  const signInWithDevRole = async (
+    role: 'DONOR' | 'HOSPITAL' | 'BLOOD_BANK' | 'ADMIN'
+  ): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const session = await api.auth.devLogin(role);
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('lifelink_dev_token', session.token);
+      }
+      setToken(session.token);
+      const status = await fetchProfile(session.token);
+      return status === 'ACTIVE'
+        ? { success: true }
+        : { success: false, error: 'Development account could not be provisioned.' };
+    } catch (err: unknown) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Development login failed.'
+      };
+    }
+  };
 
   const signInWithOtp = async (
     email: string,
@@ -252,6 +287,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       clearPendingEmail();
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('lifelink_dev_token');
+      }
       await supabase.auth.signOut();
     } catch (err) {
       console.error('[LIFE-LINK Auth] Sign out error:', err);
@@ -273,6 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profileStatus,
     authError,
     signInWithOtp,
+    signInWithDevRole,
     verifyOtp,
     signOut,
     refreshProfile,
