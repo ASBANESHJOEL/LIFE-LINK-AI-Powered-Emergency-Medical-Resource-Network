@@ -72,6 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return [
           { label: 'Dashboard', href: '/blood-bank/dashboard', icon: <Activity className="w-4 h-4" /> },
           { label: 'Blood Inventory', href: '/blood-bank/inventory', icon: <Database className="w-4 h-4" /> },
+          { label: 'Request Stock', href: '/blood-bank/requests', icon: <AlertOctagon className="w-4 h-4" /> },
           { label: 'Transfer Requests', href: '/blood-bank/transfers', icon: <HeartHandshake className="w-4 h-4" /> },
         ];
       case 'DONOR':
