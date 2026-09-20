@@ -72,12 +72,17 @@ export default function EmergencyRequestResolutionPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('emergency_requests')
-        .select('*, hospital:hospitals(id, name)')
+        .select('*, hospital:hospitals(id, hospital_name)')
         .eq('id', requestId)
         .single();
 
       if (error) throw error;
-      setRequest(data as unknown as EmergencyRequest);
+      setRequest({
+        ...(data as unknown as EmergencyRequest),
+        hospital: data?.hospital
+          ? { id: data.hospital.id, name: data.hospital.hospital_name }
+          : undefined,
+      });
 
       // Also load existing donor dispatches for this request
       const { data: dispatchData } = await supabase
