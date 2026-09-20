@@ -28,7 +28,7 @@ class ApiClientError extends Error {
   }
 }
 
-async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(endpoint: string, options: RequestInit = {}, timeoutMs = 30000): Promise<T> {
   const headers = new Headers(options.headers || {});
 
   if (!headers.has('Authorization')) {
@@ -47,7 +47,26 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   const url = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const response = await fetch(url, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiClientError('The server took too long to respond. Refresh the dispatch state before retrying.', 408, {
+        error: 'REQUEST_TIMEOUT',
+        endpoint,
+      });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const contentType = response.headers.get('content-type');
   const isJson = contentType?.includes('application/json');
@@ -260,7 +279,7 @@ export const api = {
       }>(`/api/donor-dispatches/${dispatchId}/withdraw`, {
         method: 'POST',
         body: JSON.stringify({ makeUnavailable, reason }),
-      }),
+      }, 20000),
 
     gpsTimeout: (dispatchId: string) =>
       request<{
