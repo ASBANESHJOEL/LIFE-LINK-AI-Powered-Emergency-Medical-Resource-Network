@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { BrandLogo } from '../../components/shared/BrandLogo';
 import Link from 'next/link';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
@@ -17,7 +18,7 @@ export default function ChooseRolePage() {
   return (
     <div className="lifelink-page min-h-screen flex items-center justify-center px-4 py-10">
       <div className="auth-surface p-6 sm:p-9">
-        <Link href="/" className="brand-mark"><span className="brand-mark-icon"><span className="text-base">+</span></span><span className="brand-mark-word">LIFE LINK</span></Link>
+        <BrandLogo href="/" />
         <div className="mt-10">
           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Choose your role</h1>
           <p className="mt-2 text-xs text-slate-500">Select how you use Life Link</p>
