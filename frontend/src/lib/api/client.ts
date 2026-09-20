@@ -99,6 +99,19 @@ export const api = {
           body: JSON.stringify({ email }),
         }
       ),
+
+    devStatus: () =>
+      request<{ enabled: boolean; environment: string; roles: string[] }>('/api/auth/dev-status'),
+
+    devLogin: (role: 'DONOR' | 'HOSPITAL' | 'BLOOD_BANK' | 'ADMIN') =>
+      request<{
+        token: string;
+        user: AuthUserResponse['user'];
+        expiresAt: string;
+      }>('/api/auth/dev-login', {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      }),
   },
 
   requests: {
