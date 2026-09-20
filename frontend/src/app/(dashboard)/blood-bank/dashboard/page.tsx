@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Database, Building2, HeartHandshake, ShieldCheck, ArrowUpRight, Plus } from 'lucide-react';
+import { Database, Building2, HeartHandshake, ShieldCheck, ArrowUpRight, Plus, ClipboardPlus } from 'lucide-react';
 import { useAuth } from '../../../../lib/supabase/auth-context';
 import { supabase } from '../../../../lib/supabase/client';
 import { Card, CardHeader, CardTitle, CardContent } from '../../../../components/ui/card';
@@ -71,10 +71,14 @@ export default function BloodBankDashboardPage() {
 
         <div className="flex items-center gap-3">
           <Link href="/blood-bank/inventory">
-            <Button size="md" variant="medical" className="gap-2 shadow-lg shadow-sky-950/60">
-              <Database className="w-4 h-4" />
-              Manage Stock Lots
-            </Button>
+            <div className="flex items-center gap-2">
+            <Link href="/blood-bank/requests">
+              <Button size="md" variant="outline" className="gap-2"><ClipboardPlus className="w-4 h-4" /> Request Stock</Button>
+            </Link>
+            <Link href="/blood-bank/inventory">
+              <Button size="md" variant="medical" className="gap-2 shadow-lg shadow-sky-950/60"><Database className="w-4 h-4" /> Manage Stock Lots</Button>
+            </Link>
+          </div>
           </Link>
         </div>
       </div>
