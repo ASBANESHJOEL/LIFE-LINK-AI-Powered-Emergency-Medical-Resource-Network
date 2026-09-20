@@ -64,6 +64,9 @@ export interface AuthContextType {
     email: string,
     options?: { shouldCreateUser?: boolean }
   ) => Promise<{ success: boolean; error?: string }>;
+  signInWithDevRole: (
+    role: 'DONOR' | 'HOSPITAL' | 'BLOOD_BANK' | 'ADMIN'
+  ) => Promise<{ success: boolean; error?: string }>;
   verifyOtp: (
     email: string,
     token: string
