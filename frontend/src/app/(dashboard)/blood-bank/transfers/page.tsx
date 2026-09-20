@@ -21,7 +21,7 @@ export default function BloodBankTransfersPage() {
       setLoading(true);
       let query = supabase
         .from('blood_bank_transfer_offers')
-        .select('*, emergency_requests(id, urgency, hospital_id, hospitals:hospital_id(name))')
+        .select('*, emergency_requests(id, urgency, hospital_id, hospitals:hospital_id(hospital_name))')
         .order('created_at', { ascending: false });
 
       if (organization?.bloodBankId) {
@@ -90,7 +90,7 @@ export default function BloodBankTransfersPage() {
                     <tr key={offer.id} className="hover:bg-slate-800/40">
                       <td className="py-3 px-4 font-mono text-slate-300">{offer.id.slice(0, 8)}...</td>
                       <td className="py-3 px-4 font-semibold text-white">
-                        {offer.emergency_requests?.hospitals?.name || 'Regional Trauma Center'}
+                        {offer.emergency_requests?.hospitals?.hospital_name || 'Regional Trauma Center'}
                       </td>
                       <td className="py-3 px-4">
                         <BloodTypeBadge bloodGroup={offer.blood_group} size="sm" />
