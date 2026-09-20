@@ -70,6 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setOrganization(null);
           setToken(null);
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem('lifelink_dev_token');
+          }
           setProfileStatus('UNAUTHENTICATED');
           setAuthError('Your session has expired. Please log in again.');
           await supabase.auth.signOut().catch(() => {});
