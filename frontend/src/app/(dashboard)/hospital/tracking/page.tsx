@@ -49,7 +49,14 @@ export default function HospitalTrackingPage() {
       setErrorMessage(error.message);
       setDispatches([]);
     } else {
-      setDispatches((data || []) as TrackingRow[]);
+      setDispatches(
+        (data || []).map((row: any) => ({
+          ...row,
+          emergency_requests: Array.isArray(row.emergency_requests)
+            ? (row.emergency_requests[0] ?? null)
+            : (row.emergency_requests ?? null),
+        })) as TrackingRow[]
+      );
     }
 
     setLoading(false);
