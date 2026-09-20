@@ -200,7 +200,7 @@ export default function DonorDashboardPage() {
               )}
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Available for trauma response in regional emergency network
+              {isAvailable ? 'Available for trauma response in regional emergency network' : 'Not accepting new emergency dispatches'}
             </p>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function DonorDashboardPage() {
           label="Active Alerts"
           value={notifiedAlerts.length}
           urgency={notifiedAlerts.length > 0 ? 'critical' : 'normal'}
-          subtext="Pending immediate response"
+          subtext={isAvailable ? 'Pending immediate response' : 'Existing assignment awaiting response'}
           icon={<AlertOctagon className="w-5 h-5 text-red-400" />}
         />
         <MetricCard
