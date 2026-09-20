@@ -26,7 +26,7 @@ function SignupContent() {
     message?: string;
   } | null>(null);
 
-  const formatRoleName = (r?: string) => {
+  const formatRoleName = (r?: string | null) => {
     if (!r) return 'Network Member';
     if (r === 'BLOOD_BANK') return 'Blood Bank';
     if (r === 'ADMIN') return 'Administrator';
