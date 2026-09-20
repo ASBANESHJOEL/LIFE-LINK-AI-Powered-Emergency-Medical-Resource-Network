@@ -66,6 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           { label: 'New Request', href: '/hospital/requests/new', icon: <AlertOctagon className="w-4 h-4" /> },
           { label: 'Inventory', href: '/hospital/inventory', icon: <Database className="w-4 h-4" /> },
           { label: 'Peer Transfers', href: '/hospital/transfers', icon: <Building2 className="w-4 h-4" /> },
+          { label: 'Live Tracking', href: '/hospital/tracking', icon: <Navigation className="w-4 h-4" /> },
         ];
       case 'BLOOD_BANK':
         return [
