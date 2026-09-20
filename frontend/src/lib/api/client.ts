@@ -33,8 +33,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!headers.has('Authorization')) {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      headers.set('Authorization', `Bearer ${session.access_token}`);
+    const devToken = typeof window !== 'undefined'
+      ? window.localStorage.getItem('lifelink_dev_token')
+      : null;
+    const accessToken = devToken || session?.access_token;
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
     }
   }
 
