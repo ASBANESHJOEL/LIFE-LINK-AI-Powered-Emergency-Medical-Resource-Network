@@ -3,12 +3,8 @@ import { isDevAuthEnabled, issueMockToken } from '../services/devAuthService.js'
 
 const router = express.Router();
 
-/**
- * POST /api/auth/dev-login
- * Development-only endpoint to issue a temporary mock donor session.
- * Rejects with 403 in production or when dev auth is disabled.
- * Client-supplied roles are strictly ignored; role is locked to DONOR.
- */
+const DEV_ROLES = ['DONOR', 'HOSPITAL', 'BLOOD_BANK', 'ADMIN'];
+
 router.post('/auth/dev-login', (req, res) => {
   if (!isDevAuthEnabled()) {
     return res.status(403).json({
@@ -18,8 +14,15 @@ router.post('/auth/dev-login', (req, res) => {
   }
 
   try {
-    const session = issueMockToken();
-    return res.status(200).json(session);
+    const role = String(req.body?.role || 'DONOR').trim().toUpperCase();
+    if (!DEV_ROLES.includes(role)) {
+      return res.status(400).json({
+        error: 'INVALID_DEV_ROLE',
+        message: 'Supported development roles: DONOR, HOSPITAL, BLOOD_BANK, ADMIN'
+      });
+    }
+
+    return res.status(200).json(issueMockToken(role));
   } catch (err) {
     console.error('[DEV-AUTH] Failed to issue mock token:', err);
     return res.status(500).json({
@@ -29,14 +32,11 @@ router.post('/auth/dev-login', (req, res) => {
   }
 });
 
-/**
- * GET /api/auth/dev-status
- * Check if development authentication is enabled.
- */
 router.get('/auth/dev-status', (req, res) => {
   return res.status(200).json({
     enabled: isDevAuthEnabled(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    roles: isDevAuthEnabled() ? DEV_ROLES : []
   });
 });
 
