@@ -78,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         return [
           { label: 'Dashboard', href: '/donor/dashboard', icon: <Activity className="w-4 h-4" /> },
           { label: 'Emergency Alerts', href: '/donor/alerts', icon: <AlertOctagon className="w-4 h-4" /> },
+          { label: 'Live Tracking', href: '/donor/tracking', icon: <Navigation className="w-4 h-4" /> },
           { label: 'Live Dispatches', href: '/donor/dispatches', icon: <Navigation className="w-4 h-4" /> },
         ];
       case 'ADMIN':
