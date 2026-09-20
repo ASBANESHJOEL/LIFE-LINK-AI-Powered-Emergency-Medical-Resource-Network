@@ -26,7 +26,7 @@ function SignupContent() {
     message?: string;
   } | null>(null);
 
-  const formatRoleName = (r?: string | null) => {
+  const formatRoleName = (r: string | null | undefined): string => {
     if (!r) return 'Network Member';
     if (r === 'BLOOD_BANK') return 'Blood Bank';
     if (r === 'ADMIN') return 'Administrator';
@@ -85,7 +85,7 @@ function SignupContent() {
   // State: Existing user account detected
   if (existingAccount) {
     const isSameRole = Boolean(existingAccount.existingRole) && existingAccount.existingRole === role;
-    const existingRoleFormatted = formatRoleName(existingAccount.existingRole);
+    const existingRoleFormatted = formatRoleName(existingAccount.existingRole ?? undefined);
 
     return (
       <div className="lifelink-page min-h-screen flex items-center justify-center px-4 py-10">
