@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { findEligibleDonors } from '../services/donorEligibilityService.js';
 
@@ -6,7 +7,7 @@ const router = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COMPONENT_TYPES = new Set(['WHOLE_BLOOD', 'RED_BLOOD_CELLS', 'PLASMA', 'PLATELETS']);
 
-router.get('/requests/:requestId/eligible-donors', async (req, res) => {
+router.get('/requests/:requestId/eligible-donors', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
   try {
     if (req.user?.role !== 'HOSPITAL') {
       return res.status(403).json({ error: 'FORBIDDEN', message: 'Only authenticated hospital users can retrieve donor candidates' });

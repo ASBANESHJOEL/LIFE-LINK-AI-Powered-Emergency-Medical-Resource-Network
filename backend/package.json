@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "test": "node --import ./test/setup.js --test",
+    "test:rls": "node --import ./test/setup.js --test test/tenant-isolation-rls.test.js",
+    "test:critical-path": "node --import ./test/setup.js --test test/emergency-critical-path.test.js",
+    "test:resource-orchestration": "node --import ./test/setup.js --test test/emergency-resource-orchestration.test.js",
+    "test:production-reliability": "node --import ./test/setup.js --test test/production-reliability-observability.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

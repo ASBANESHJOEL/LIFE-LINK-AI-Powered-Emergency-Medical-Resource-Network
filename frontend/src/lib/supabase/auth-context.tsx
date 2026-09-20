@@ -37,22 +37,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (err instanceof ApiClientError) {
         if (err.status === 403) {
-          const details = err.details as { error?: string; message?: string } | undefined;
-          if (details?.error === 'ACCOUNT_NOT_PROVISIONED') {
+          const details = err.details as { error?: string | { code?: string; message?: string }; message?: string } | undefined;
+          const errorCode = typeof details?.error === 'string' ? details.error : details?.error?.code;
+          const errorMessage = typeof details?.error === 'object' && details?.error?.message ? details.error.message : details?.message;
+          if (errorCode === 'ACCOUNT_NOT_PROVISIONED') {
             setUser(null);
             setOrganization(null);
             setProfileStatus('UNPROVISIONED');
             setAuthError(
-              details.message ||
+              errorMessage ||
                 'Your email is authenticated, but your account has not been provisioned in the LIFE-LINK medical registry.'
             );
             return 'UNPROVISIONED';
-          } else if (details?.error === 'ACCOUNT_INACTIVE') {
+          } else if (errorCode === 'ACCOUNT_INACTIVE') {
             setUser(null);
             setOrganization(null);
             setProfileStatus('INACTIVE');
             setAuthError(
-              details.message ||
+              errorMessage ||
                 'Your LIFE-LINK account has been deactivated by regional policy. Access denied.'
             );
             return 'INACTIVE';

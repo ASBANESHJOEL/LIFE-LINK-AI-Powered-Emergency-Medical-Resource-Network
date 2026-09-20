@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
+import { cancelEmergencyRequestService } from '../services/donorDispatchService.js';
 
 const router = Router();
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const BLOOD_GROUPS = new Set([
   'A_POSITIVE',
@@ -36,7 +39,7 @@ const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(v
  * The next resolution layer will perform atomic inventory/peer-bank
  * allocation so a request cannot oversell stock under concurrent requests.
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
   try {
     if (req.user?.role !== 'HOSPITAL') {
       return res.status(403).json({
@@ -159,6 +162,26 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Step 4/5: Emergency lifecycle observability - structured audit record
+    try {
+      await supabaseAdmin.from('audit_logs').insert({
+        actor_user_id: req.user.id,
+        action: 'EMERGENCY_REQUEST_CREATED',
+        entity_type: 'emergency_request',
+        entity_id: request.id,
+        metadata: {
+          hospital_id: hospital.id,
+          blood_group: request.blood_group,
+          resource_type: request.resource_type,
+          quantity: request.quantity,
+          urgency: request.urgency
+        },
+        is_synthetic: Boolean(request.is_synthetic)
+      });
+    } catch (auditErr) {
+      console.error('Failed to record audit log for emergency request creation:', auditErr);
+    }
+
     return res.status(201).json({
       request,
       hospital: {
@@ -178,6 +201,72 @@ router.post('/', async (req, res) => {
       error: 'INTERNAL_SERVER_ERROR',
       message: 'An unexpected error occurred while creating the emergency request'
     });
+  }
+});
+
+router.post('/:requestId/cancel', requireAuth, requireRole('HOSPITAL'), async (req, res) => {
+  try {
+    const hospitalId = req.organization?.hospitalId;
+    if (!hospitalId) {
+      return res.status(403).json({
+        error: 'HOSPITAL_NOT_PROVISIONED',
+        message: 'No active hospital organization is associated with this account'
+      });
+    }
+
+    const { requestId } = req.params;
+    if (!UUID_RE.test(requestId)) {
+      return res.status(400).json({ error: 'INVALID_REQUEST_ID', message: 'requestId must be a valid UUID' });
+    }
+
+    const result = await cancelEmergencyRequestService({
+      requestId,
+      hospitalId,
+      userId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Cancel emergency request failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_REQUEST_ID') {
+      return res.status(400).json({ error: 'INVALID_REQUEST_ID', message: error.message });
+    }
+    if (error.code === 'INVALID_REQUEST_STATE' || error.code === '55000') {
+      return res.status(409).json({ error: 'INVALID_REQUEST_STATE', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to cancel emergency request' });
+  }
+});
+
+router.post('/:requestId/expire', requireAuth, async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    if (!UUID_RE.test(requestId)) {
+      return res.status(400).json({ error: 'INVALID_REQUEST_ID', message: 'requestId must be a valid UUID' });
+    }
+
+    const { expireEmergencyRequestService } = await import('../services/donorDispatchService.js');
+    const result = await expireEmergencyRequestService({
+      requestId,
+      userId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Expire emergency request failed:', error);
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_REQUEST_STATE' || error.code === '55000') {
+      return res.status(409).json({ error: 'INVALID_REQUEST_STATE', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to expire emergency request' });
   }
 });
 

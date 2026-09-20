@@ -37,3 +37,8 @@ venv/
 ENV/
 ml/data/raw/*.parquet
 ml/data/processed/*.parquet
+
+# Local Supabase runtime & local test artifacts
+backend/local-test/
+backend/supabase/
+.supabase/

@@ -9,7 +9,11 @@ import {
   recordDonorLocation,
   getDispatchTracking,
   markDonorArrived,
-  completeDonorDispatch
+  completeDonorDispatch,
+  withdrawDonorDispatch,
+  handleGpsTimeout,
+  handleEtaExceeded,
+  updateDonorAvailability
 } from '../services/donorDispatchService.js';
 
 const router = Router();
@@ -364,6 +368,159 @@ router.post('/donor-dispatches/:dispatchId/tracking/complete', requireAuth, requ
       return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
     }
     return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to complete donor dispatch' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/withdraw', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const makeUnavailable = Boolean(req.body?.makeUnavailable);
+
+    const result = await withdrawDonorDispatch({
+      dispatchId,
+      donorUserId: req.user.id,
+      makeUnavailable
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Donor withdrawal failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to process donor withdrawal' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/gps-timeout', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const result = await handleGpsTimeout({
+      dispatchId,
+      donorUserId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('GPS timeout failed:', error);
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    if (error.code === 'INVALID_DISPATCH_ID') {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to handle GPS timeout' });
+  }
+});
+
+router.post('/donor-dispatches/:dispatchId/eta-check', requireAuth, async (req, res) => {
+  try {
+    const { dispatchId } = req.params;
+    if (!UUID_RE.test(dispatchId)) {
+      return res.status(400).json({ error: 'INVALID_DISPATCH_ID', message: 'dispatchId must be a valid UUID' });
+    }
+
+    const { eta, maxThreshold } = req.body || {};
+    if (eta === undefined || typeof eta !== 'number') {
+      return res.status(400).json({ error: 'INVALID_ETA', message: 'eta must be a valid number' });
+    }
+
+    // Backend remains authoritative for threshold calculation
+    const result = await handleEtaExceeded({
+      dispatchId,
+      eta,
+      actorUserId: req.user.id
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('ETA check failed:', error);
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ error: 'NOT_FOUND', message: error.message });
+    }
+    if (error.code === 'INVALID_STATE_TRANSITION') {
+      return res.status(409).json({ error: 'INVALID_STATE_TRANSITION', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to process ETA check' });
+  }
+});
+
+router.get('/donors/availability', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { data: donor, error: donorErr } = await supabaseAdmin
+      .from('donors')
+      .select('id, user_id, availability_status, eligibility_status')
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+
+    if (donorErr || !donor) {
+      return res.status(404).json({ error: 'DONOR_NOT_FOUND', message: 'Donor profile not found' });
+    }
+
+    return res.status(200).json({
+      donorId: donor.id,
+      userId: donor.user_id,
+      availabilityStatus: donor.availability_status,
+      eligibilityStatus: donor.eligibility_status
+    });
+  } catch (error) {
+    console.error('Get availability failed:', error);
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to get donor availability' });
+  }
+});
+
+router.patch('/donors/availability', requireAuth, requireRole('DONOR'), async (req, res) => {
+  try {
+    const { availabilityStatus, confirmWithdraw } = req.body || {};
+    if (!availabilityStatus || typeof availabilityStatus !== 'string') {
+      return res.status(400).json({ error: 'INVALID_AVAILABILITY_STATUS', message: 'availabilityStatus is required' });
+    }
+
+    const result = await updateDonorAvailability({
+      donorUserId: req.user.id,
+      availabilityStatus,
+      confirmWithdraw: Boolean(confirmWithdraw)
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Update availability failed:', error);
+    if (error.code === 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED') {
+      return res.status(409).json({
+        error: 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED',
+        message: 'You are currently assigned to an emergency request. Changing your availability will withdraw this assignment and allow another donor to be selected.'
+      });
+    }
+    if (error.code === 'INVALID_AVAILABILITY_STATUS') {
+      return res.status(400).json({ error: error.code, message: error.message });
+    }
+    if (error.code === 'FORBIDDEN') {
+      return res.status(403).json({ error: 'FORBIDDEN', message: error.message });
+    }
+    return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR', message: 'Failed to update donor availability' });
   }
 });
 
