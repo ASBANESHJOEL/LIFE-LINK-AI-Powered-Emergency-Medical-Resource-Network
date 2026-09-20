@@ -10,6 +10,7 @@ import healthRouter from './routes/healthRoutes.js';
 import { requireAuth, requireRole } from './middleware/auth.js';
 import requestsRouter from './routes/requests.js';
 import inventoryRouter from './routes/inventoryRoutes.js';
+import bloodBankRouter from './routes/bloodBankRoutes.js';
 import peerTransferRouter from './routes/peerTransferRoutes.js';
 import peerTransferAcceptanceRouter from './routes/peerTransferAcceptanceRoutes.js';
 import donorEligibilityRouter from './routes/donorEligibilityRoutes.js';
@@ -105,6 +106,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
 
 app.use('/api/requests', requestsRouter);
 app.use('/api', inventoryRouter);
+app.use('/api', bloodBankRouter);
 app.use('/api', peerTransferRouter);
 app.use('/api', peerTransferAcceptanceRouter);
 app.use('/api', donorEligibilityRouter);
