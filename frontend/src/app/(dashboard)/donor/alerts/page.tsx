@@ -36,7 +36,7 @@ export default function DonorAlertsPage() {
       if (donor) {
         const { data: dispatches, error } = await supabase
           .from('donor_dispatches')
-          .select('*, emergency_requests(*, hospitals:hospital_id(name))')
+          .select('*, emergency_requests(*, hospitals:hospital_id(hospital_name))')
           .eq('donor_id', donor.id)
           .eq('status', 'NOTIFIED')
           .order('notified_at', { ascending: false });
