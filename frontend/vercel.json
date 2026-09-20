@@ -3,10 +3,6 @@
     {
       "source": "/api/:path*",
       "destination": "https://life-link-ai-powered-emergency-medical-resource-production.up.railway.app/api/:path*"
-    },
-    {
-      "source": "/((?!api(?:/|$)).*)",
-      "destination": "/index.html"
     }
   ]
 }
