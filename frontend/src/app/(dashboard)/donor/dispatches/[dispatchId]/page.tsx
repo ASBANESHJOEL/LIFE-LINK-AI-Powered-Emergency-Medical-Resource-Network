@@ -100,18 +100,38 @@ export default function DonorDispatchTrackingPage() {
     }
   };
 
-  // Milestone Action 1: Start Transit
+  // Milestone Action 1: Start Transit + explicitly request live GPS permission.
   const handleStartTransit = async () => {
     setActionLoading(true);
     setErrorMessage(null);
     try {
-      await api.donorDispatches.startTracking(dispatchId);
-      setStatusMessage('Transit started! Your live coordinates are now tracked.');
-      await loadDispatchData();
+      const startTransit = async (latitude: number, longitude: number) => {
+        await api.donorDispatches.updateLocation(dispatchId, latitude, longitude);
+        await api.donorDispatches.startTracking(dispatchId);
+        setStatusMessage(`Transit started. Live GPS is shared with the hospital at ${latitude.toFixed(4)}, ${longitude.toFixed(4)}.`);
+        await loadDispatchData();
+        setActionLoading(false);
+      };
+
+      if (!navigator.geolocation) {
+        setErrorMessage('This browser does not support GPS. Enable location services or use a GPS-capable browser.');
+        setActionLoading(false);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          void startTransit(position.coords.latitude, position.coords.longitude);
+        },
+        () => {
+          setErrorMessage('Location permission is required to begin live emergency tracking. Please allow location access and try again.');
+          setActionLoading(false);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to start transit';
       setErrorMessage(msg);
-    } finally {
       setActionLoading(false);
     }
   };
@@ -245,9 +265,9 @@ export default function DonorDispatchTrackingPage() {
       {['ACCEPTED', 'EN_ROUTE'].includes(dispatch.status) && (!dispatch.current_latitude || trackingTelemetry?.status === 'WAITING_FOR_LOCATION') && (
         <Alert variant="warning" className="bg-amber-950/40 border-amber-800 text-amber-200">
           <AlertTriangle className="w-5 h-5 text-amber-400" />
-          <AlertTitle className="font-bold">Turn on GPS to Enable Emergency Routing</AlertTitle>
+          <AlertTitle className="font-bold">Share Your Live Location</AlertTitle>
           <AlertDescription className="text-xs text-amber-300/90">
-            Emergency route telemetry requires live coordinates. Grace period active (5m timeout). Please transmit your location or start transit.
+            Your dispatch is accepted. Before leaving, allow browser location access so the hospital can see your live route and ETA. The dispatch remains assigned during the GPS grace period.
           </AlertDescription>
         </Alert>
       )}
@@ -277,6 +297,42 @@ export default function DonorDispatchTrackingPage() {
           <AlertTitle>Action Error</AlertTitle>
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
+      )}
+
+      {/* Accepted dispatch response / live-location handoff */}
+      {dispatch.status === 'ACCEPTED' && (
+        <Card className="border-red-800/60 bg-gradient-to-r from-red-950/40 via-slate-900 to-slate-900 shadow-xl">
+          <CardContent className="p-5">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-full bg-red-500/15 p-2 text-red-400">
+                  <Navigation className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">Emergency dispatch accepted</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">
+                    You are assigned to this request. Tap the button to grant GPS permission, send your current location, and move the dispatch to <strong>EN_ROUTE</strong>.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-400">
+                    <span className="rounded border border-slate-700 px-2 py-1">GPS shared with hospital</span>
+                    <span className="rounded border border-slate-700 px-2 py-1">Live ETA calculation</span>
+                    <span className="rounded border border-slate-700 px-2 py-1">You can withdraw later</span>
+                  </div>
+                </div>
+              </div>
+              <Button
+                variant="medical"
+                size="lg"
+                isLoading={actionLoading}
+                onClick={handleStartTransit}
+                className="shrink-0 gap-2 min-w-[230px]"
+              >
+                <MapPin className="w-4 h-4" />
+                Allow GPS & Start Transit
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Transit Metrics Strip */}
@@ -388,7 +444,7 @@ export default function DonorDispatchTrackingPage() {
               className="gap-2"
             >
               <Navigation className="w-4 h-4" />
-              1. Start Transit (En Route)
+              1. Allow GPS & Start Transit
             </Button>
           )}
 
