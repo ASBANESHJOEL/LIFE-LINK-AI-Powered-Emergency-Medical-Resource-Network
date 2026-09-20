@@ -78,33 +78,11 @@ router.post('/auth/signup-check', async (req, res) => {
       });
     }
 
-    // Auth users can exist before their LIFE-LINK registry record is
-    // provisioned. Detect that state to avoid duplicate Auth signup attempts.
-    const { data: authUserData, error: authUserError } =
-      await supabaseAdmin.auth.admin.getUserByEmail(cleanEmail);
-
-    if (authUserError && authUserError.status !== 404) {
-      console.error('[AUTH] Error checking Supabase Auth user existence:', {
-        status: authUserError.status,
-        code: authUserError.code,
-        message: authUserError.message
-      });
-      return res.status(503).json({
-        error: 'AUTH_UNAVAILABLE',
-        message: 'Signup verification is temporarily unavailable. Please try again.'
-      });
-    }
-
-    if (authUserData?.user) {
-      return res.status(200).json({
-        exists: true,
-        provisioned: false,
-        role: null,
-        is_active: true,
-        message: 'An authentication account already exists. Sign in to continue; LIFE-LINK access still requires provisioning.'
-      });
-    }
-
+    // Supabase Auth remains the source of truth for the OTP creation flow.
+    // If an Auth identity already exists but is not yet provisioned in
+    // public.users, signInWithOtp(..., shouldCreateUser: true) can continue
+    // the verification flow and the /me provisioning guard keeps privileged
+    // access blocked until a trusted registry record exists.
     return res.status(200).json({
       exists: false,
       provisioned: false
