@@ -93,8 +93,22 @@ export default function DonorDispatchTrackingPage() {
       setStatusMessage('You have withdrawn from this dispatch. Your donor eligibility remains 100% ELIGIBLE and unharmed.');
       await loadDispatchData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to withdraw from dispatch';
-      setErrorMessage(msg);
+      const isTimeout = err instanceof Error && 'status' in err && (err as { status?: number }).status === 408;
+      if (isTimeout) {
+        // The server may still be finishing the transactional release. Reconcile
+        // the authoritative dispatch state before telling the donor to retry.
+        setStatusMessage('Withdrawal request is taking longer than expected. Checking the authoritative dispatch status…');
+        setShowWithdrawModal(false);
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          await loadDispatchData();
+          if (dispatch?.status === 'CANCELLED') break;
+        }
+        setErrorMessage('Withdrawal is taking longer than expected. The dispatch status has been refreshed; please retry only if it still shows active.');
+      } else {
+        const msg = err instanceof Error ? err.message : 'Failed to withdraw from dispatch';
+        setErrorMessage(msg);
+      }
     } finally {
       setActionLoading(false);
     }
