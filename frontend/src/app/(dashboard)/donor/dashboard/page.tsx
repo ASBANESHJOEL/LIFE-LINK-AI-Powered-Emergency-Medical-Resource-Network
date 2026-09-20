@@ -21,49 +21,103 @@ import { MetricCard } from '../../../../components/shared/MetricCard';
 import { BloodTypeBadge } from '../../../../components/shared/BloodTypeBadge';
 import { StatusBadge } from '../../../../components/shared/StatusBadge';
 import { DonorDispatch } from '../../../../types/dispatch';
+import { api } from '../../../../lib/api/client';
+import { AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 
 export default function DonorDashboardPage() {
   const { user } = useAuth();
   const [donorRecord, setDonorRecord] = useState<any>(null);
   const [activeDispatches, setActiveDispatches] = useState<DonorDispatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [showWithdrawConfirmModal, setShowWithdrawConfirmModal] = useState(false);
+  const [availabilityMessage, setAvailabilityMessage] = useState<string | null>(null);
+
+  async function loadDonorData() {
+    if (!user) return;
+    try {
+      setLoading(true);
+      // Load donor profile by user_id
+      const { data: donor } = await supabase
+        .from('donors')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (donor) {
+        setDonorRecord(donor);
+
+        // Load active dispatches for this donor
+        const { data: dispatches } = await supabase
+          .from('donor_dispatches')
+          .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(name))')
+          .eq('donor_id', donor.id)
+          .order('notified_at', { ascending: false })
+          .limit(10);
+
+        if (dispatches) {
+          setActiveDispatches(dispatches as unknown as DonorDispatch[]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load donor data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function loadDonorData() {
-      if (!user) return;
-      try {
-        setLoading(true);
-        // Load donor profile by user_id
-        const { data: donor } = await supabase
-          .from('donors')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-
-        if (donor) {
-          setDonorRecord(donor);
-
-          // Load active dispatches for this donor
-          const { data: dispatches } = await supabase
-            .from('donor_dispatches')
-            .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(name))')
-            .eq('donor_id', donor.id)
-            .order('notified_at', { ascending: false })
-            .limit(5);
-
-          if (dispatches) {
-            setActiveDispatches(dispatches as unknown as DonorDispatch[]);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load donor data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     loadDonorData();
   }, [user]);
+
+  const hasActiveTransitDispatch = activeDispatches.some((d) =>
+    ['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(d.status)
+  );
+
+  const handleToggleAvailability = async () => {
+    if (!donorRecord) return;
+    const currentStatus = donorRecord.availability_status;
+
+    if (currentStatus === 'AVAILABLE') {
+      // If donor has an active dispatch, require confirmation
+      if (hasActiveTransitDispatch) {
+        setShowWithdrawConfirmModal(true);
+        return;
+      }
+      // Otherwise directly switch to UNAVAILABLE
+      await executeAvailabilityChange('UNAVAILABLE', false);
+    } else {
+      // Switch back to AVAILABLE
+      await executeAvailabilityChange('AVAILABLE', false);
+    }
+  };
+
+  const executeAvailabilityChange = async (newStatus: 'AVAILABLE' | 'UNAVAILABLE', confirmWithdraw: boolean) => {
+    setAvailabilityLoading(true);
+    setAvailabilityMessage(null);
+    try {
+      const res = await api.donors.setAvailability(newStatus, confirmWithdraw);
+      setDonorRecord((prev: any) => ({ ...prev, availability_status: res.availabilityStatus }));
+      setShowWithdrawConfirmModal(false);
+      setAvailabilityMessage(
+        newStatus === 'AVAILABLE'
+          ? 'You are now AVAILABLE for emergency dispatches.'
+          : confirmWithdraw
+          ? 'Active dispatch withdrawn. You are now UNAVAILABLE.'
+          : 'You are now UNAVAILABLE for new dispatches.'
+      );
+      await loadDonorData();
+    } catch (err: any) {
+      console.error('Failed to update availability:', err);
+      if (err?.details?.error === 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED') {
+        setShowWithdrawConfirmModal(true);
+      }
+    } finally {
+      setAvailabilityLoading(false);
+    }
+  };
+
+  const isAvailable = donorRecord?.availability_status === 'AVAILABLE';
 
   const notifiedAlerts = activeDispatches.filter((d) => d.status === 'NOTIFIED');
   const enRouteDispatches = activeDispatches.filter((d) => d.status === 'EN_ROUTE' || d.status === 'ACCEPTED');
@@ -124,6 +178,94 @@ export default function DonorDashboardPage() {
           </div>
         )}
       </div>
+
+      {availabilityMessage && (
+        <div className="p-3 rounded-xl bg-sky-950/40 border border-sky-800 text-xs text-sky-200 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+          {availabilityMessage}
+        </div>
+      )}
+
+      {/* Donor Availability Control */}
+      <Card className="border-slate-800 bg-slate-900/90 overflow-hidden shadow-lg">
+        <CardContent className="p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className={`h-12 w-12 rounded-xl flex items-center justify-center border ${
+              isAvailable
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-slate-800 border-slate-700 text-slate-400'
+            }`}>
+              <div className={`h-3.5 w-3.5 rounded-full ${isAvailable ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'}`} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase tracking-wider font-semibold text-slate-400">
+                  Donor Availability
+                </span>
+                <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                  isAvailable ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-300'
+                }`}>
+                  {isAvailable ? '🟢 AVAILABLE' : '⚪ UNAVAILABLE'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-1">
+                {isAvailable
+                  ? 'You can receive emergency requests.'
+                  : "You won't receive new emergency requests until you become available."}
+              </p>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleToggleAvailability}
+            isLoading={availabilityLoading}
+            variant={isAvailable ? 'outline' : 'medical'}
+            className={`font-bold text-xs h-9 ${
+              isAvailable
+                ? 'border-slate-700 hover:bg-slate-800 text-slate-200'
+                : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+            }`}
+          >
+            {isAvailable ? 'Switch to Unavailable' : 'Switch to Available'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Active Dispatch Withdrawal Confirmation Modal */}
+      {showWithdrawConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="max-w-md w-full rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-amber-400">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-lg font-bold text-white">Active Emergency Assignment</h3>
+            </div>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              You are currently assigned to an emergency request.
+              Changing your availability will withdraw this assignment
+              and allow another donor to be selected.
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowWithdrawConfirmModal(false)}
+                disabled={availabilityLoading}
+              >
+                Stay Available
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => executeAvailabilityChange('UNAVAILABLE', true)}
+                isLoading={availabilityLoading}
+                className="bg-red-600 hover:bg-red-500 text-white font-semibold"
+              >
+                Withdraw & Become Unavailable
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

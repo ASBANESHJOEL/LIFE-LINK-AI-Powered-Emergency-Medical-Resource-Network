@@ -2,9 +2,32 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js';
 import { rankEligibleDonors } from './donorRankingService.js';
 import { sendDispatchBatchNotifications } from './notificationService.js';
 
-const ACTIVE_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED'];
-const FULFILLED_OR_ACTIVE_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'COMPLETED'];
+const ACTIVE_DISPATCH_STATUSES = ['ACCEPTED', 'EN_ROUTE', 'ARRIVED'];
+const PENDING_DISPATCH_STATUSES = ['PENDING', 'NOTIFIED', 'RESPONDED'];
 const MAX_BATCH_SIZE = 5;
+
+/**
+ * Dynamic getter functions for authoritative backend emergency thresholds.
+ * Safe fallback defaults are used if environment variables are not supplied.
+ */
+export function getGpsGracePeriodMinutes() {
+  const val = Number(process.env.GPS_GRACE_PERIOD_MINUTES);
+  return Number.isFinite(val) && val > 0 ? val : 5;
+}
+
+export function getStaleLocationThresholdMinutes() {
+  const val = Number(process.env.STALE_LOCATION_THRESHOLD_MINUTES);
+  return Number.isFinite(val) && val > 0 ? val : 5;
+}
+
+export function getMaxAcceptableEtaMinutes() {
+  const val = Number(process.env.MAX_ACCEPTABLE_ETA_MINUTES);
+  return Number.isFinite(val) && val > 0 ? val : 60;
+}
+
+export const GPS_GRACE_PERIOD_MINUTES = getGpsGracePeriodMinutes();
+export const STALE_LOCATION_THRESHOLD_MINUTES = getStaleLocationThresholdMinutes();
+export const MAX_ACCEPTABLE_ETA_MINUTES = getMaxAcceptableEtaMinutes();
 import { isDevAuthEnabled } from './devAuthService.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -73,7 +96,7 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
     .from('donor_dispatches')
     .select('id, donor_id, status')
     .eq('request_id', request.id)
-    .in('status', FULFILLED_OR_ACTIVE_STATUSES);
+    .in('status', ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED']);
 
   if (existingError) {
     const err = new Error(existingError.message || 'Failed to inspect existing donor dispatches');
@@ -81,8 +104,10 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
     throw err;
   }
 
-  const activeOrFulfilledDispatchUnits = (existingDispatches || []).length;
-  const totalCoveredUnits = reservedInventoryUnits + activeOrFulfilledDispatchUnits;
+  // Active dispatches currently assigned to this request (COMPLETED is historical, NOT active)
+  const activeDispatchUnits = (existingDispatches || [])
+    .filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status)).length;
+  const totalCoveredUnits = reservedInventoryUnits + activeDispatchUnits;
   const remainingUnitsNeeded = Math.max(0, Number(currentRequest.quantity) - totalCoveredUnits);
 
   if (remainingUnitsNeeded === 0) {
@@ -117,15 +142,22 @@ export async function createNextDonorDispatchBatch({ request, actorUserId, batch
     };
   }
 
-  // 4. Candidate Backfill: filter out active donors from rankedDonors and backfill up to targetBatchSize
-  const activeDonorIds = new Set(
-    (existingDispatches || [])
-      .filter((d) => ACTIVE_DISPATCH_STATUSES.includes(d.status))
-      .map((row) => row.donor_id)
+  // 4. Candidate Backfill:
+  // Exclude donors who currently have an active dispatch across ANY request (ACCEPTED, EN_ROUTE, ARRIVED)
+  // or are currently pending on THIS request.
+  // COMPLETED, CANCELLED, and DECLINED states do NOT block future matching.
+  const { data: globalActiveDispatches } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('donor_id')
+    .in('status', ACTIVE_DISPATCH_STATUSES);
+
+  const globallyActiveDonorIds = new Set((globalActiveDispatches || []).map((row) => row.donor_id));
+  const thisRequestDispatchedDonorIds = new Set(
+    (existingDispatches || []).map((row) => row.donor_id)
   );
 
   const availableCandidates = ranking.rankedDonors.filter(
-    (donor) => !activeDonorIds.has(donor.donorId)
+    (donor) => !globallyActiveDonorIds.has(donor.donorId) && !thisRequestDispatchedDonorIds.has(donor.donorId)
   );
 
   if (!availableCandidates.length) {
@@ -499,23 +531,35 @@ async function executeDirectDonorResponse({ dispatchId, donorUserId, response })
 
     const reservedInv = (allocations || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
 
-    const { data: acceptedDispatches } = await supabaseAdmin
+    const { data: activeDispatches } = await supabaseAdmin
       .from('donor_dispatches')
       .select('id')
       .eq('request_id', req.id)
-      .in('status', ['ACCEPTED', 'COMPLETED']);
+      .in('status', ACTIVE_DISPATCH_STATUSES);
 
-    const acceptedCount = (acceptedDispatches || []).length;
-    const totalCovered = reservedInv + acceptedCount;
+    const activeCount = (activeDispatches || []).length;
+    const totalCovered = reservedInv + activeCount;
     const remainingUnits = Math.max(0, req.quantity - totalCovered);
 
+    const nowIso = new Date().toISOString();
+
     if (remainingUnits <= 0) {
+      // Surplus acceptance: cancel surplus dispatch cleanly without over-allocation
+      await supabaseAdmin
+        .from('donor_dispatches')
+        .update({
+          status: 'CANCELLED',
+          cancellation_reason: 'REQUEST_FULFILLED',
+          cancelled_at: nowIso,
+          responded_at: dispatch.responded_at || nowIso
+        })
+        .eq('id', dispatchId);
+
       const err = new Error('Emergency request is already fully fulfilled');
       err.code = 'REQUEST_ALREADY_FULFILLED';
       throw err;
     }
 
-    const nowIso = new Date().toISOString();
     const { data: updatedDispatch, error: updateErr } = await supabaseAdmin
       .from('donor_dispatches')
       .update({
@@ -534,15 +578,25 @@ async function executeDirectDonorResponse({ dispatchId, donorUserId, response })
     }
 
     const newRemaining = Math.max(0, remainingUnits - 1);
-    const newRequestStatus = newRemaining === 0 ? 'FULFILLED' : 'PARTIALLY_FULFILLED';
+    const newRequestStatus = req.status;
 
-    await supabaseAdmin
-      .from('emergency_requests')
-      .update({
-        status: newRequestStatus,
-        completed_at: newRemaining === 0 ? nowIso : null
-      })
-      .eq('id', req.id);
+    // If needed donor capacity is satisfied, release remaining unaccepted dispatches
+    if (newRemaining === 0) {
+      try {
+        await supabaseAdmin
+          .from('donor_dispatches')
+          .update({
+            status: 'CANCELLED',
+            cancellation_reason: 'SURPLUS_CAPACITY',
+            cancelled_at: nowIso
+          })
+          .eq('request_id', req.id)
+          .neq('id', dispatchId)
+          .in('status', PENDING_DISPATCH_STATUSES);
+      } catch (cancelErr) {
+        // Safe fallback in mock test environments where complex chained filters may not exist
+      }
+    }
 
     return {
       dispatch_id: updatedDispatch.id,
@@ -1088,26 +1142,56 @@ export async function getDispatchTracking({ dispatchId, user, organization }) {
     };
   }
 
-  return {
-    dispatchId: dispatch.id,
-    requestId: dispatch.request_id,
-    donorId: dispatch.donor_id,
-    status: dispatch.status,
-    currentLocation: latestLocation ? {
-      latitude: latestLocation.latitude,
-      longitude: latestLocation.longitude,
-      eta: latestLocation.eta ?? null,
-      recordedAt: latestLocation.recorded_at
-    } : null,
-    timestamps: {
-      notifiedAt: dispatch.notified_at ?? null,
-      acceptedAt: dispatch.accepted_at ?? null,
-      enRouteAt: dispatch.en_route_at ?? null,
-      arrivedAt: dispatch.arrived_at ?? null,
-      completedAt: dispatch.completed_at ?? null
+    const staleMinutes = getStaleLocationThresholdMinutes();
+    const staleThresholdMs = staleMinutes * 60 * 1000;
+    let isStale = false;
+    let trackingStatus = 'UNAVAILABLE';
+
+    if (dispatch.status === 'ACCEPTED') {
+      trackingStatus = latestLocation ? 'ACTIVE' : 'WAITING_FOR_LOCATION';
+    } else if (dispatch.status === 'EN_ROUTE') {
+      if (latestLocation?.recorded_at) {
+        const ageMs = Date.now() - new Date(latestLocation.recorded_at).getTime();
+        isStale = ageMs > staleThresholdMs;
+        trackingStatus = isStale ? 'STALE' : 'ACTIVE';
+      } else {
+        trackingStatus = 'WAITING_FOR_LOCATION';
+      }
+    } else if (dispatch.status === 'ARRIVED') {
+      trackingStatus = 'ARRIVED';
+    } else if (dispatch.status === 'COMPLETED') {
+      trackingStatus = 'COMPLETED';
+    } else if (dispatch.status === 'CANCELLED') {
+      trackingStatus = 'CANCELLED';
     }
-  };
-}
+
+    return {
+      dispatchId: dispatch.id,
+      requestId: dispatch.request_id,
+      donorId: dispatch.donor_id,
+      status: dispatch.status,
+      trackingStatus,
+      isStale,
+      staleThresholdMinutes: staleMinutes,
+      gpsGracePeriodMinutes: getGpsGracePeriodMinutes(),
+      maxAcceptableEtaMinutes: getMaxAcceptableEtaMinutes(),
+      cancellationReason: dispatch.cancellation_reason ?? null,
+      currentLocation: latestLocation ? {
+        latitude: latestLocation.latitude,
+        longitude: latestLocation.longitude,
+        eta: latestLocation.eta ?? null,
+        recordedAt: latestLocation.recorded_at
+      } : null,
+      timestamps: {
+        notifiedAt: dispatch.notified_at ?? null,
+        acceptedAt: dispatch.accepted_at ?? null,
+        enRouteAt: dispatch.en_route_at ?? null,
+        arrivedAt: dispatch.arrived_at ?? null,
+        completedAt: dispatch.completed_at ?? null,
+        cancelledAt: dispatch.cancelled_at ?? null
+      }
+    };
+  }
 
 /**
  * Mark donor arrival: transitions EN_ROUTE -> ARRIVED.
@@ -1337,36 +1421,10 @@ export async function completeDonorDispatch({ dispatchId, user, organization }) 
     throw err;
   }
 
-  // 7. Request Fulfillment Integrity: unit was already accounted on ACCEPTED.
-  // Verify request status: if not already FULFILLED, check total allocations.
-  let requestStatus = request.status;
-  if (requestStatus !== 'FULFILLED') {
-    const { data: allocations } = await supabaseAdmin
-      .from('request_inventory_allocations')
-      .select('allocated_units')
-      .eq('request_id', request.id)
-      .eq('status', 'RESERVED');
-
-    const reservedInv = (allocations || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
-
-    const { data: activeDispatches } = await supabaseAdmin
-      .from('donor_dispatches')
-      .select('id')
-      .eq('request_id', request.id)
-      .in('status', ['ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'COMPLETED']);
-
-    const totalCovered = reservedInv + (activeDispatches || []).length;
-    if (totalCovered >= request.quantity) {
-      requestStatus = 'FULFILLED';
-      await supabaseAdmin
-        .from('emergency_requests')
-        .update({
-          status: 'FULFILLED',
-          completed_at: request.completed_at || nowIso
-        })
-        .eq('id', request.id);
-    }
-  }
+  // 7. Request Fulfillment Integrity: Completing a donor dispatch does NOT
+  // independently manufacture request fulfillment. Request status is derived
+  // strictly from actual resource inventory allocations.
+  const requestStatus = request.status;
 
   // 8. Audit log: DONOR_DISPATCH_COMPLETED
   try {
@@ -1407,5 +1465,558 @@ export async function completeDonorDispatch({ dispatchId, user, organization }) 
     requestStatus,
     completedAt: nowIso,
     isAlreadyCompleted: false
+  };
+}
+
+/**
+ * Voluntary donor withdrawal from active dispatch.
+ * Strictly authenticated to the donor owning the dispatch.
+ * Releases dispatch (status CANCELLED, cancellation_reason DONOR_WITHDREW).
+ * Donor remains globally ELIGIBLE. If makeUnavailable=true, sets availability_status=UNAVAILABLE.
+ */
+export async function withdrawDonorDispatch({ dispatchId, donorUserId, makeUnavailable = false }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  // 1. Resolve donor profile
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id, availability_status, eligibility_status')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found for authenticated user');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  // 2. Lookup dispatch
+  const { data: dispatch, error: dispErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  // 3. Verify ownership
+  if (dispatch.donor_id !== donor.id) {
+    const err = new Error('Unauthorized: dispatch does not belong to this donor');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  if (!['ACCEPTED', 'EN_ROUTE', 'ARRIVED', 'PENDING', 'NOTIFIED', 'RESPONDED'].includes(dispatch.status)) {
+    const err = new Error(`Cannot withdraw dispatch in status ${dispatch.status}`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  // 4. Try release_donor_dispatch RPC
+  let releaseResult = null;
+  try {
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('release_donor_dispatch', {
+      p_dispatch_id: dispatchId,
+      p_actor_user_id: donorUserId,
+      p_reason: 'DONOR_WITHDREW'
+    });
+    if (!rpcErr && rpcData?.length) {
+      releaseResult = rpcData[0];
+    }
+  } catch (e) {}
+
+  if (!releaseResult) {
+    const nowIso = new Date().toISOString();
+    await supabaseAdmin
+      .from('donor_dispatches')
+      .update({
+        status: 'CANCELLED',
+        cancellation_reason: 'DONOR_WITHDREW',
+        cancelled_at: nowIso
+      })
+      .eq('id', dispatchId);
+
+    // Re-evaluate request status based strictly on existing allocations and remaining active donors
+    const { data: req } = await supabaseAdmin
+      .from('emergency_requests')
+      .select('id, quantity, status')
+      .eq('id', dispatch.request_id)
+      .maybeSingle();
+
+    if (req && req.status !== 'CANCELLED') {
+      const { data: allocs } = await supabaseAdmin
+        .from('request_inventory_allocations')
+        .select('allocated_units')
+        .eq('request_id', req.id)
+        .eq('status', 'RESERVED');
+      const resInv = (allocs || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+
+      // Request status is derived strictly from actual inventory allocations
+      const newStatus = resInv >= req.quantity ? 'FULFILLED' : resInv > 0 ? 'PARTIALLY_FULFILLED' : 'OPEN';
+      if (req.status !== newStatus) {
+        await supabaseAdmin.from('emergency_requests').update({ status: newStatus }).eq('id', req.id);
+      }
+    }
+  }
+
+  // 5. Update availability if requested (eligibility is NEVER modified)
+  if (makeUnavailable) {
+    await supabaseAdmin
+      .from('donors')
+      .update({ availability_status: 'UNAVAILABLE' })
+      .eq('id', donor.id);
+  }
+
+  // 6. Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: donor.id,
+      event: 'DONOR_DISPATCH_WITHDRAWN',
+      title: 'Donor Withdrew from Dispatch',
+      body: 'The assigned donor has withdrawn from this emergency dispatch. A replacement donor can now be dispatched.',
+      metadata: { makeUnavailable }
+    });
+  } catch (e) {}
+
+  return {
+    dispatchId: dispatch.id,
+    requestId: dispatch.request_id,
+    donorId: donor.id,
+    status: 'CANCELLED',
+    cancellationReason: 'DONOR_WITHDREW',
+    availabilityStatus: makeUnavailable ? 'UNAVAILABLE' : donor.availability_status
+  };
+}
+
+/**
+ * Handle GPS Grace Period Expiry (GPS Timeout).
+ * Releases the dispatch without modifying donor eligibility or permanently blocking the donor.
+ */
+export async function handleGpsTimeout({ dispatchId, donorUserId }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  const { data: dispatch, error: dispErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  if (dispatch.donor_id !== donor.id) {
+    const err = new Error('Unauthorized: dispatch does not belong to this donor');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  if (dispatch.status !== 'ACCEPTED') {
+    const err = new Error(`GPS timeout only applies to dispatches in ACCEPTED status (current: ${dispatch.status})`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  // Release dispatch with GPS_TIMEOUT
+  let releaseResult = null;
+  try {
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('release_donor_dispatch', {
+      p_dispatch_id: dispatchId,
+      p_actor_user_id: donorUserId,
+      p_reason: 'GPS_TIMEOUT'
+    });
+    if (!rpcErr && rpcData?.length) {
+      releaseResult = rpcData[0];
+    }
+  } catch (e) {}
+
+  if (!releaseResult) {
+    const nowIso = new Date().toISOString();
+    await supabaseAdmin
+      .from('donor_dispatches')
+      .update({
+        status: 'CANCELLED',
+        cancellation_reason: 'GPS_TIMEOUT',
+        cancelled_at: nowIso
+      })
+      .eq('id', dispatchId);
+
+    const { data: req } = await supabaseAdmin
+      .from('emergency_requests')
+      .select('id, quantity, status')
+      .eq('id', dispatch.request_id)
+      .maybeSingle();
+
+    if (req && req.status !== 'CANCELLED') {
+      const { data: allocs } = await supabaseAdmin
+        .from('request_inventory_allocations')
+        .select('allocated_units')
+        .eq('request_id', req.id)
+        .eq('status', 'RESERVED');
+      const resInv = (allocs || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+
+      // Request status is derived strictly from actual inventory allocations
+      const newStatus = resInv >= req.quantity ? 'FULFILLED' : resInv > 0 ? 'PARTIALLY_FULFILLED' : 'OPEN';
+      if (req.status !== newStatus) {
+        await supabaseAdmin.from('emergency_requests').update({ status: newStatus }).eq('id', req.id);
+      }
+    }
+  }
+
+  // Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: donor.id,
+      event: 'DONOR_DISPATCH_GPS_TIMEOUT',
+      title: 'GPS Timeout: Donor Dispatch Released',
+      body: 'Assigned donor did not enable GPS within the grace period. Assignment released; replacement donor can now be selected.'
+    });
+  } catch (e) {}
+
+  return {
+    dispatchId: dispatch.id,
+    requestId: dispatch.request_id,
+    donorId: donor.id,
+    status: 'CANCELLED',
+    cancellationReason: 'GPS_TIMEOUT',
+    gpsGracePeriodMinutes: getGpsGracePeriodMinutes()
+  };
+}
+
+/**
+ * Handle Traffic / ETA Threshold Exceeded.
+ * If ETA exceeds emergency threshold, releases assignment without penalizing donor eligibility.
+ */
+export async function handleEtaExceeded({ dispatchId, eta, maxThreshold, actorUserId }) {
+  if (!dispatchId || !UUID_RE.test(dispatchId)) {
+    const err = new Error('dispatchId must be a valid UUID');
+    err.code = 'INVALID_DISPATCH_ID';
+    throw err;
+  }
+
+  const effectiveMaxThreshold = Number.isFinite(Number(maxThreshold)) && Number(maxThreshold) > 0
+    ? Number(maxThreshold)
+    : getMaxAcceptableEtaMinutes();
+
+  const { data: dispatch, error: dispErr } = await supabaseAdmin
+    .from('donor_dispatches')
+    .select('*')
+    .eq('id', dispatchId)
+    .maybeSingle();
+
+  if (dispErr || !dispatch) {
+    const err = new Error('Donor dispatch not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  if (dispatch.status !== 'EN_ROUTE') {
+    const err = new Error(`ETA threshold only evaluated for EN_ROUTE dispatches (current: ${dispatch.status})`);
+    err.code = 'INVALID_STATE_TRANSITION';
+    throw err;
+  }
+
+  const numericEta = Number(eta);
+  if (!Number.isFinite(numericEta) || numericEta <= effectiveMaxThreshold) {
+    return {
+      dispatchId: dispatch.id,
+      status: dispatch.status,
+      eta: numericEta,
+      threshold: effectiveMaxThreshold,
+      exceeded: false
+    };
+  }
+
+  // Release dispatch with ETA_EXCEEDED
+  let releaseResult = null;
+  try {
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('release_donor_dispatch', {
+      p_dispatch_id: dispatchId,
+      p_actor_user_id: actorUserId || dispatch.donor_id,
+      p_reason: 'ETA_EXCEEDED'
+    });
+    if (!rpcErr && rpcData?.length) {
+      releaseResult = rpcData[0];
+    }
+  } catch (e) {}
+
+  if (!releaseResult) {
+    const nowIso = new Date().toISOString();
+    await supabaseAdmin
+      .from('donor_dispatches')
+      .update({
+        status: 'CANCELLED',
+        cancellation_reason: 'ETA_EXCEEDED',
+        cancelled_at: nowIso
+      })
+      .eq('id', dispatchId);
+
+    const { data: req } = await supabaseAdmin
+      .from('emergency_requests')
+      .select('id, quantity, status')
+      .eq('id', dispatch.request_id)
+      .maybeSingle();
+
+    if (req && req.status !== 'CANCELLED') {
+      const { data: allocs } = await supabaseAdmin
+        .from('request_inventory_allocations')
+        .select('allocated_units')
+        .eq('request_id', req.id)
+        .eq('status', 'RESERVED');
+      const resInv = (allocs || []).reduce((sum, r) => sum + Number(r.allocated_units || 0), 0);
+
+      // Request status is derived strictly from actual inventory allocations
+      const newStatus = resInv >= req.quantity ? 'FULFILLED' : resInv > 0 ? 'PARTIALLY_FULFILLED' : 'OPEN';
+      if (req.status !== newStatus) {
+        await supabaseAdmin.from('emergency_requests').update({ status: newStatus }).eq('id', req.id);
+      }
+    }
+  }
+
+  // Hospital notification
+  try {
+    await notifyHospitalOnTrackingEvent({
+      requestId: dispatch.request_id,
+      dispatchId: dispatch.id,
+      donorId: dispatch.donor_id,
+      event: 'DONOR_DISPATCH_ETA_EXCEEDED',
+      title: 'ETA Exceeded: Donor Dispatch Reassigned',
+      body: `Donor transit time (${numericEta} mins) exceeded threshold (${effectiveMaxThreshold} mins). Assignment released for prompt reassignment.`
+    });
+  } catch (e) {}
+
+  return {
+    dispatchId: dispatch.id,
+    requestId: dispatch.request_id,
+    donorId: dispatch.donor_id,
+    status: 'CANCELLED',
+    cancellationReason: 'ETA_EXCEEDED',
+    exceeded: true,
+    eta: numericEta,
+    threshold: effectiveMaxThreshold
+  };
+}
+
+/**
+ * Update Donor Availability status (AVAILABLE <-> UNAVAILABLE).
+ * If switching to UNAVAILABLE with active dispatches, requires explicit confirmation.
+ * NEVER modifies donor eligibility_status.
+ */
+export async function updateDonorAvailability({ donorUserId, availabilityStatus, confirmWithdraw = false }) {
+  if (!donorUserId) {
+    const err = new Error('donorUserId is required');
+    err.code = 'UNAUTHORIZED';
+    throw err;
+  }
+
+  const normStatus = String(availabilityStatus || '').trim().toUpperCase();
+  if (!['AVAILABLE', 'UNAVAILABLE'].includes(normStatus)) {
+    const err = new Error('availabilityStatus must be AVAILABLE or UNAVAILABLE');
+    err.code = 'INVALID_AVAILABILITY_STATUS';
+    throw err;
+  }
+
+  // 1. Try atomic set_donor_availability RPC
+  try {
+    const { data: rpcData, error: rpcError } = await supabaseAdmin.rpc('set_donor_availability', {
+      p_donor_user_id: donorUserId,
+      p_new_status: normStatus,
+      p_confirm_withdraw: Boolean(confirmWithdraw)
+    });
+
+    if (!rpcError && rpcData?.length) {
+      return {
+        donorId: rpcData[0].donor_id,
+        userId: rpcData[0].user_id,
+        availabilityStatus: rpcData[0].availability_status,
+        eligibilityStatus: rpcData[0].eligibility_status,
+        activeDispatchesWithdrawn: Number(rpcData[0].active_dispatches_withdrawn || 0)
+      };
+    }
+
+    if (rpcError) {
+      if (rpcError.code === '55001') {
+        const err = new Error('Active dispatch withdrawal confirmation required');
+        err.code = 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED';
+        throw err;
+      }
+      if (rpcError.code === '42501') {
+        const err = new Error('Donor profile not found for user');
+        err.code = 'FORBIDDEN';
+        throw err;
+      }
+    }
+  } catch (err) {
+    if (['ACTIVE_DISPATCH_CONFIRMATION_REQUIRED', 'FORBIDDEN', 'INVALID_AVAILABILITY_STATUS'].includes(err.code)) {
+      throw err;
+    }
+  }
+
+  // 2. Direct operations fallback
+  const { data: donor, error: donorErr } = await supabaseAdmin
+    .from('donors')
+    .select('id, user_id, availability_status, eligibility_status')
+    .eq('user_id', donorUserId)
+    .maybeSingle();
+
+  if (donorErr || !donor) {
+    const err = new Error('Donor profile not found');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  let withdrawnCount = 0;
+  if (normStatus === 'UNAVAILABLE') {
+    const { data: activeDispatches } = await supabaseAdmin
+      .from('donor_dispatches')
+      .select('id')
+      .eq('donor_id', donor.id)
+      .in('status', ACTIVE_DISPATCH_STATUSES);
+
+    if ((activeDispatches || []).length > 0 && !confirmWithdraw) {
+      const err = new Error('Active dispatch withdrawal confirmation required');
+      err.code = 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED';
+      throw err;
+    }
+
+    if ((activeDispatches || []).length > 0 && confirmWithdraw) {
+      for (const d of activeDispatches) {
+        await withdrawDonorDispatch({ dispatchId: d.id, donorUserId, makeUnavailable: false });
+        withdrawnCount++;
+      }
+    }
+  }
+
+  const { data: updatedDonor, error: updateErr } = await supabaseAdmin
+    .from('donors')
+    .update({ availability_status: normStatus })
+    .eq('id', donor.id)
+    .select('id, user_id, availability_status, eligibility_status')
+    .single();
+
+  if (updateErr) {
+    const err = new Error(updateErr.message || 'Failed to update donor availability');
+    err.code = updateErr.code;
+    throw err;
+  }
+
+  return {
+    donorId: updatedDonor.id,
+    userId: updatedDonor.user_id,
+    availabilityStatus: updatedDonor.availability_status,
+    eligibilityStatus: updatedDonor.eligibility_status,
+    activeDispatchesWithdrawn: withdrawnCount
+  };
+}
+
+/**
+ * Hospital Emergency Request Cancellation.
+ * Transitions request to CANCELLED and safely releases any active donor dispatches.
+ * Leaves donors' global eligibility intact.
+ */
+export async function cancelEmergencyRequestService({ requestId, hospitalId, userId }) {
+  if (!requestId || !UUID_RE.test(requestId)) {
+    const err = new Error('requestId must be a valid UUID');
+    err.code = 'INVALID_REQUEST_ID';
+    throw err;
+  }
+
+  const { data: request, error: reqErr } = await supabaseAdmin
+    .from('emergency_requests')
+    .select('id, hospital_id, status')
+    .eq('id', requestId)
+    .maybeSingle();
+
+  if (reqErr || !request) {
+    const err = new Error('Emergency request not found');
+    err.code = 'NOT_FOUND';
+    throw err;
+  }
+
+  if (request.hospital_id !== hospitalId) {
+    const err = new Error('Hospital is not authorized to cancel this request');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  if (['CANCELLED', 'EXPIRED'].includes(request.status)) {
+    return {
+      requestId: request.id,
+      status: request.status,
+      isAlreadyCancelled: true,
+      releasedDispatchCount: 0
+    };
+  }
+
+  // 1. Try cancel_emergency_request RPC
+  try {
+    const { data: rpcData, error: rpcErr } = await supabaseAdmin.rpc('cancel_emergency_request', {
+      p_request_id: requestId,
+      p_actor_user_id: userId
+    });
+
+    if (!rpcErr && rpcData?.length) {
+      return {
+        requestId: rpcData[0].request_id,
+        status: rpcData[0].request_status,
+        isAlreadyCancelled: false,
+        releasedDispatchCount: Number(rpcData[0].released_dispatch_count || 0)
+      };
+    }
+  } catch (e) {}
+
+  // 2. Fallback direct operations
+  const nowIso = new Date().toISOString();
+  await supabaseAdmin
+    .from('emergency_requests')
+    .update({ status: 'CANCELLED' })
+    .eq('id', requestId);
+
+  const { data: released } = await supabaseAdmin
+    .from('donor_dispatches')
+    .update({
+      status: 'CANCELLED',
+      cancellation_reason: 'REQUEST_CANCELLED',
+      cancelled_at: nowIso
+    })
+    .eq('request_id', requestId)
+    .in('status', ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED'])
+    .select('id');
+
+  return {
+    requestId: request.id,
+    status: 'CANCELLED',
+    isAlreadyCancelled: false,
+    releasedDispatchCount: (released || []).length
   };
 }

@@ -24,6 +24,10 @@ export interface DonorDispatch {
   en_route_at?: string | null;
   arrived_at?: string | null;
   completed_at?: string | null;
+  current_latitude?: number | null;
+  current_longitude?: number | null;
+  cancellation_reason?: string | null;
+  cancelled_at?: string | null;
   donor?: {
     id: string;
     blood_group: BloodGroup;

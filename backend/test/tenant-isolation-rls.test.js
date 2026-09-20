@@ -7,13 +7,67 @@ import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 
+import crypto from 'node:crypto';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const integrationEnabled = process.env.LIFE_LINK_INTEGRATION === 'true';
+// Load .env if present
+dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+
+const localSupabaseUrl = process.env.LOCAL_SUPABASE_URL || 'http://127.0.0.1:54321';
+const localJwtSecret = process.env.SUPABASE_JWT_SECRET || 'super-secret-jwt-token-with-at-least-32-characters-long';
+
+// Detect whether running in live integration mode
+const integrationEnabled = process.env.LIFE_LINK_INTEGRATION !== 'false';
+
+// Default to local Docker Supabase when example URL is detected
+const isExampleUrl = !process.env.SUPABASE_URL || process.env.SUPABASE_URL === 'https://example.supabase.co';
+const supabaseUrl = isExampleUrl ? localSupabaseUrl : process.env.SUPABASE_URL;
+
+// HS256 JWT generator for seeded role users
+function generateJwtToken(userId, email, role = 'authenticated') {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    sub: userId,
+    email,
+    role,
+    aud: 'authenticated',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 360000
+  })).toString('base64url');
+  const sig = crypto.createHmac('sha256', localJwtSecret).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${sig}`;
+}
+
+function generateServiceRoleToken() {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    role: 'service_role',
+    iss: 'supabase',
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 360000
+  })).toString('base64url');
+  const sig = crypto.createHmac('sha256', localJwtSecret).update(`${header}.${payload}`).digest('base64url');
+  return `${header}.${payload}.${sig}`;
+}
+
+// Seeded local role users in Supabase Docker environment
+const SEEDED_ROLE_USERS = {
+  TEST_HOSPITAL_A_TOKEN: { id: '3beb87e8-cf22-4b83-bf5e-178df6e7b755', email: 'hospital-a@lifelink.local' },
+  TEST_HOSPITAL_B_TOKEN: { id: '83389c72-9c0f-4f45-be0a-d6b60049703b', email: 'hospital-b@lifelink.local' },
+  TEST_BLOOD_BANK_A_TOKEN: { id: '31b21a84-feb1-4994-b316-d66b87b350f5', email: 'bloodbank-a@lifelink.local' },
+  TEST_BLOOD_BANK_B_TOKEN: { id: '669dc42e-6ec0-491e-8469-2c7c369021f9', email: 'bloodbank-b@lifelink.local' },
+  TEST_DONOR_A_TOKEN: { id: '4579c41a-0ae8-469c-8b9a-87d9c248faae', email: 'donor-a@lifelink.local' },
+  TEST_DONOR_B_TOKEN: { id: 'dd5f33af-8ec4-4452-9722-671425a2181d', email: 'donor-b@lifelink.local' }
+};
 
 if (integrationEnabled) {
-  dotenv.config({ path: path.resolve(__dirname, '../.env'), override: true });
+  for (const [tokenKey, user] of Object.entries(SEEDED_ROLE_USERS)) {
+    if (!process.env[tokenKey]) {
+      process.env[tokenKey] = generateJwtToken(user.id, user.email);
+    }
+  }
 }
 
 const hospitalAToken = process.env.TEST_HOSPITAL_A_TOKEN;
@@ -23,8 +77,9 @@ const bloodBankBToken = process.env.TEST_BLOOD_BANK_B_TOKEN;
 const donorAToken = process.env.TEST_DONOR_A_TOKEN;
 const donorBToken = process.env.TEST_DONOR_B_TOKEN;
 
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
+const supabaseSecretKey = (!process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SECRET_KEY === 'test-secret-key')
+  ? generateServiceRoleToken()
+  : process.env.SUPABASE_SECRET_KEY;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'test-anon-key';
 
 // ============================================================================
@@ -80,9 +135,35 @@ function clientForToken(token) {
   });
 }
 
-const adminClient = createClient(supabaseUrl, supabaseSecretKey || 'test-secret-key', {
+const adminClient = createClient(supabaseUrl, supabaseSecretKey, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
+
+// Ensure 0-unit inventory fixture for Blood Bank B if needed
+if (integrationEnabled) {
+  try {
+    const { data: bZero } = await adminClient
+      .from('blood_inventory')
+      .select('id')
+      .eq('blood_bank_id', '20000000-0000-0000-0000-000000000002')
+      .eq('available_units', 0)
+      .limit(1);
+    if (!bZero || bZero.length === 0) {
+      await adminClient.from('blood_inventory').insert({
+        id: '50000000-0000-0000-0000-000000000099',
+        blood_bank_id: '20000000-0000-0000-0000-000000000002',
+        blood_group: 'AB_NEGATIVE',
+        component_type: 'WHOLE_BLOOD',
+        available_units: 0,
+        reserved_units: 0,
+        critical_level: 2,
+        is_synthetic: true
+      });
+    }
+  } catch (err) {
+    // Ignore if already exists or constraint
+  }
+}
 
 // ============================================================================
 // 1. MIGRATION STRUCTURE & STATIC SECURITY VERIFICATION

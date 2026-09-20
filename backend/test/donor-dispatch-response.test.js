@@ -544,7 +544,7 @@ test('DECLINE ISOLATION: declining a dispatch leaves emergency request status ac
 // 6. Request Fulfillment Transitions
 // ==========================================
 
-test('FULFILLMENT: request with 2 units transitions to PARTIALLY_FULFILLED on first acceptance', async () => {
+test('FULFILLMENT: request with 2 units records ACCEPTED dispatch and preserves OPEN status on first acceptance', async () => {
   // REQUEST_ID_1 has quantity 2
   const res = await fetch(`${baseUrl}/api/donor-dispatches/${DISPATCH_A1}/respond`, {
     method: 'POST',
@@ -554,13 +554,13 @@ test('FULFILLMENT: request with 2 units transitions to PARTIALLY_FULFILLED on fi
 
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.equal(data.requestStatus, 'PARTIALLY_FULFILLED');
+  assert.equal(data.requestStatus, 'OPEN');
   assert.equal(data.remainingUnits, 1);
-  assert.equal(db.emergency_requests[REQUEST_ID_1].status, 'PARTIALLY_FULFILLED');
+  assert.equal(db.emergency_requests[REQUEST_ID_1].status, 'OPEN');
   assert.equal(db.emergency_requests[REQUEST_ID_1].completed_at, null);
 });
 
-test('FULFILLMENT: request with 1 unit transitions to FULFILLED and sets completed_at on acceptance', async () => {
+test('FULFILLMENT: request with 1 unit records ACCEPTED dispatch and preserves OPEN status without mutating completed_at', async () => {
   // REQUEST_ID_2 has quantity 1
   const res = await fetch(`${baseUrl}/api/donor-dispatches/${DISPATCH_A2}/respond`, {
     method: 'POST',
@@ -570,10 +570,10 @@ test('FULFILLMENT: request with 1 unit transitions to FULFILLED and sets complet
 
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.equal(data.requestStatus, 'FULFILLED');
+  assert.equal(data.requestStatus, 'OPEN');
   assert.equal(data.remainingUnits, 0);
-  assert.equal(db.emergency_requests[REQUEST_ID_2].status, 'FULFILLED');
-  assert.ok(db.emergency_requests[REQUEST_ID_2].completed_at);
+  assert.equal(db.emergency_requests[REQUEST_ID_2].status, 'OPEN');
+  assert.equal(db.emergency_requests[REQUEST_ID_2].completed_at, null);
 });
 
 test('CONCURRENCY: rejects acceptance when remaining requirement is 0 (REQUEST_ALREADY_FULFILLED)', async () => {

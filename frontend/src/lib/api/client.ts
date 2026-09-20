@@ -130,12 +130,40 @@ export const api = {
           body: JSON.stringify({ batchSize }),
         }
       ),
+
+    cancel: (requestId: string) =>
+      request<{ requestId: string; status: string; releasedDispatchCount: number }>(
+        `/api/requests/${requestId}/cancel`,
+        { method: 'POST' }
+      ),
   },
 
   transfers: {
     accept: (offerId: string) =>
       request<AcceptTransferOfferResponse>(`/api/transfer-offers/${offerId}/accept`, {
         method: 'POST',
+      }),
+  },
+
+  donors: {
+    getAvailability: () =>
+      request<{
+        donorId: string;
+        userId: string;
+        availabilityStatus: 'AVAILABLE' | 'UNAVAILABLE';
+        eligibilityStatus: string;
+      }>('/api/donors/availability'),
+
+    setAvailability: (availabilityStatus: 'AVAILABLE' | 'UNAVAILABLE', confirmWithdraw: boolean = false) =>
+      request<{
+        donorId: string;
+        userId: string;
+        availabilityStatus: 'AVAILABLE' | 'UNAVAILABLE';
+        eligibilityStatus: string;
+        activeDispatchesWithdrawn: number;
+      }>('/api/donors/availability', {
+        method: 'PATCH',
+        body: JSON.stringify({ availabilityStatus, confirmWithdraw }),
       }),
   },
 
@@ -163,6 +191,27 @@ export const api = {
     getRoute: (dispatchId: string) =>
       request<RouteInfo>(`/api/donor-dispatches/${dispatchId}/route`),
 
+    getTracking: (dispatchId: string) =>
+      request<{
+        dispatchId: string;
+        requestId: string;
+        donorId: string;
+        status: string;
+        trackingStatus: 'ACTIVE' | 'STALE' | 'WAITING_FOR_LOCATION' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED' | 'UNAVAILABLE';
+        isStale: boolean;
+        staleThresholdMinutes: number;
+        cancellationReason: string | null;
+        currentLocation: { latitude: number; longitude: number; eta: number | null; recordedAt: string } | null;
+        timestamps: {
+          notifiedAt: string | null;
+          acceptedAt: string | null;
+          enRouteAt: string | null;
+          arrivedAt: string | null;
+          completedAt: string | null;
+          cancelledAt: string | null;
+        };
+      }>(`/api/donor-dispatches/${dispatchId}/tracking`),
+
     arrive: (dispatchId: string) =>
       request<{ status: string }>(`/api/donor-dispatches/${dispatchId}/tracking/arrive`, {
         method: 'POST',
@@ -173,6 +222,43 @@ export const api = {
         `/api/donor-dispatches/${dispatchId}/tracking/complete`,
         { method: 'POST' }
       ),
+
+    withdraw: (dispatchId: string, makeUnavailable: boolean = false, reason?: string) =>
+      request<{
+        dispatchId: string;
+        requestId: string;
+        donorId: string;
+        status: string;
+        cancellationReason: string;
+        availabilityStatus: string;
+      }>(`/api/donor-dispatches/${dispatchId}/withdraw`, {
+        method: 'POST',
+        body: JSON.stringify({ makeUnavailable, reason }),
+      }),
+
+    gpsTimeout: (dispatchId: string) =>
+      request<{
+        dispatchId: string;
+        requestId: string;
+        donorId: string;
+        status: string;
+        cancellationReason: string;
+      }>(`/api/donor-dispatches/${dispatchId}/gps-timeout`, {
+        method: 'POST',
+      }),
+
+    etaCheck: (dispatchId: string, eta: number, maxThreshold?: number) =>
+      request<{
+        dispatchId: string;
+        status: string;
+        cancellationReason?: string;
+        exceeded: boolean;
+        eta: number;
+        threshold?: number;
+      }>(`/api/donor-dispatches/${dispatchId}/eta-check`, {
+        method: 'POST',
+        body: JSON.stringify({ eta, maxThreshold }),
+      }),
   },
 
   notifications: {

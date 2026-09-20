@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test": "node --import ./test/setup.js --test",
-    "test:rls": "node --import ./test/setup.js --test test/tenant-isolation-rls.test.js"
+    "test:rls": "node --import ./test/setup.js --test test/tenant-isolation-rls.test.js",
+    "test:critical-path": "node --import ./test/setup.js --test test/emergency-critical-path.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",

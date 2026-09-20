@@ -71,7 +71,7 @@ export async function findEligibleDonors({ requestId, bloodGroup, componentType,
     .from('donor_dispatches')
     .select('donor_id')
     .eq('request_id', requestId)
-    .in('status', ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED']);
+    .in('status', ['PENDING', 'NOTIFIED', 'RESPONDED', 'ACCEPTED', 'EN_ROUTE', 'ARRIVED']);
 
   if (dispatchError) {
     const error = new Error(dispatchError.message || 'Failed to check existing donor dispatches');
