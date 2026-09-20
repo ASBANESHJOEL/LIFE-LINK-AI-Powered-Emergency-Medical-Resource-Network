@@ -125,7 +125,7 @@ export default function HospitalTransfersPage() {
                         <StatusBadge status={offer.status} />
                       </td>
                       <td className="py-3 px-4 text-right">
-                        {offer.status === 'PENDING' ? (
+                        {offer.status === 'OFFERED' ? (
                           <Button
                             size="sm"
                             variant="success"
