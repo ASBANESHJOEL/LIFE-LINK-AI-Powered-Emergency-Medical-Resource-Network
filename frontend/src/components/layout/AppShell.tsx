@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Activity, AlertOctagon, Building2, Database, Bell, LogOut, Menu, X, ShieldCheck, Navigation, HeartHandshake } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
 import { api } from '../../lib/api/client';
+import { BrandLogo } from '../shared/BrandLogo';
 
 interface NavItem { label: string; href: string; icon: React.ReactNode; }
 
@@ -116,10 +117,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50" aria-label="Toggle navigation">
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <Link href="/" className="brand-mark">
-            <span className="brand-mark-icon"><span className="text-base">+</span></span>
-            <span className="brand-mark-word">LIFE LINK</span>
-          </Link>
+          <BrandLogo href="/" />
           <span className="hidden lg:block text-xs text-slate-400 border-l border-slate-200 pl-3">Emergency Medical Resource Network</span>
         </div>
 
