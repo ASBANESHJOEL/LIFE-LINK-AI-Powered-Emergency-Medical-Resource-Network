@@ -46,31 +46,68 @@ router.post('/auth/signup-check', async (req, res) => {
     }
 
     // Query public.users using server-side supabaseAdmin
-    const { data: dbUser, error: dbError } = await supabaseAdmin
+    // Keep signup-check resilient even if historical data ever contains
+    // duplicate registry rows for the same normalized email.
+    const { data: dbUsers, error: dbError } = await supabaseAdmin
       .from('users')
       .select('id, role, is_active')
       .ilike('email', cleanEmail)
-      .maybeSingle();
+      .limit(1);
 
     if (dbError) {
-      console.error('[AUTH] Error checking user existence:', dbError);
-      return res.status(500).json({
-        error: 'DATABASE_ERROR',
-        message: 'Failed to verify account status'
+      console.error('[AUTH] Error checking user existence:', {
+        code: dbError.code,
+        message: dbError.message,
+        hint: dbError.hint,
+        details: dbError.details
+      });
+      return res.status(503).json({
+        error: 'DATABASE_UNAVAILABLE',
+        message: 'Signup verification is temporarily unavailable. Please try again.'
       });
     }
 
+    const dbUser = dbUsers?.[0];
     if (dbUser) {
       return res.status(200).json({
         exists: true,
+        provisioned: true,
         role: dbUser.role,
         is_active: dbUser.is_active,
         message: 'An account already exists with this email.'
       });
     }
 
+    // Auth users can exist before their LIFE-LINK registry record is
+    // provisioned. Detect that state to avoid duplicate Auth signup attempts.
+    const { data: authUserData, error: authUserError } =
+      await supabaseAdmin.auth.admin.getUserByEmail(cleanEmail);
+
+    if (authUserError && authUserError.status !== 404) {
+      console.error('[AUTH] Error checking Supabase Auth user existence:', {
+        status: authUserError.status,
+        code: authUserError.code,
+        message: authUserError.message
+      });
+      return res.status(503).json({
+        error: 'AUTH_UNAVAILABLE',
+        message: 'Signup verification is temporarily unavailable. Please try again.'
+      });
+    }
+
+    if (authUserData?.user) {
+      return res.status(200).json({
+        exists: true,
+        provisioned: false,
+        role: null,
+        is_active: true,
+        message: 'An authentication account already exists. Sign in to continue; LIFE-LINK access still requires provisioning.'
+      });
+    }
+
     return res.status(200).json({
-      exists: false
+      exists: false,
+      provisioned: false
     });
   } catch (err) {
     console.error('[AUTH] Unexpected error in signup-check:', err);

@@ -47,6 +47,20 @@ export default function DonorDashboardPage() {
       if (donor) {
         setDonorRecord(donor);
 
+        // Availability is changed through the authenticated backend API/RPC.
+        // Reconcile the UI with that authoritative value after the read-only
+        // donor profile query.
+        try {
+          const availability = await api.donors.getAvailability();
+          setDonorRecord((prev: any) => prev ? {
+            ...prev,
+            availability_status: availability.availabilityStatus,
+            eligibility_status: availability.eligibilityStatus
+          } : prev);
+        } catch (availabilityError) {
+          console.error('Failed to load authoritative donor availability:', availabilityError);
+        }
+
         // Load active dispatches for this donor
         const { data: dispatches } = await supabase
           .from('donor_dispatches')
@@ -111,6 +125,25 @@ export default function DonorDashboardPage() {
       console.error('Failed to update availability:', err);
       if (err?.details?.error === 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED') {
         setShowWithdrawConfirmModal(true);
+      } else {
+        setAvailabilityMessage(
+          err instanceof Error
+            ? err.message
+            : 'Unable to change availability right now. Please try again.'
+        );
+
+        // Reconcile with the server so a failed/stale write never leaves the
+        // button showing an assumed state.
+        try {
+          const current = await api.donors.getAvailability();
+          setDonorRecord((prev: any) => prev ? {
+            ...prev,
+            availability_status: current.availabilityStatus,
+            eligibility_status: current.eligibilityStatus
+          } : prev);
+        } catch (reconcileError) {
+          console.error('Failed to reconcile donor availability:', reconcileError);
+        }
       }
     } finally {
       setAvailabilityLoading(false);
