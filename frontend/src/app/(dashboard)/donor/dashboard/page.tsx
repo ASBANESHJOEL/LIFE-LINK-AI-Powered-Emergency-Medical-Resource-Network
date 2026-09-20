@@ -157,25 +157,29 @@ export default function DonorDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Active Alert Urgent Banner if NOTIFIED */}
+      {/* Active NOTIFIED dispatch banner. Availability does not erase an existing assignment. */}
       {notifiedAlerts.length > 0 && (
         <div className="p-6 rounded-2xl bg-gradient-to-r from-red-600 via-rose-700 to-red-800 text-white shadow-2xl shadow-red-950/80 animate-pulse-subtle">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <AlertOctagon className="w-5 h-5 animate-spin" />
+                <AlertOctagon className="w-5 h-5" />
                 <span className="text-xs font-black uppercase tracking-widest bg-black/30 px-2 py-0.5 rounded">
-                  CRITICAL TRAUMA DISPATCH
+                  {isAvailable ? 'CRITICAL TRAUMA DISPATCH' : 'EXISTING EMERGENCY ASSIGNMENT'}
                 </span>
               </div>
-              <h2 className="text-2xl font-black">Urgent Blood Match Required</h2>
+              <h2 className="text-2xl font-black">
+                {isAvailable ? 'Urgent Blood Match Required' : 'Existing Dispatch Requires Your Response'}
+              </h2>
               <p className="text-xs text-red-100 mt-1">
-                You have been matched by the LIFE-LINK Logistic Regression model for an immediate trauma surgery.
+                {isAvailable
+                  ? 'You have been matched by the LIFE-LINK Logistic Regression model for an immediate trauma surgery.'
+                  : 'You became unavailable after this emergency dispatch was assigned. Your availability only blocks new matches; this existing assignment remains visible until you respond or withdraw.'}
               </p>
             </div>
             <Link href="/donor/alerts">
               <Button size="lg" className="bg-white text-red-700 hover:bg-slate-100 font-black shadow-lg">
-                View & Respond Now
+                {isAvailable ? 'Review & Respond' : 'Review Existing Assignment'}
               </Button>
             </Link>
           </div>
@@ -217,6 +221,24 @@ export default function DonorDashboardPage() {
           <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
           {availabilityMessage}
         </div>
+      )}
+
+      {notifiedAlerts.length > 0 && !isAvailable && (
+        <Card className="border-amber-300 bg-amber-50 shadow-sm">
+          <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-amber-900">Existing dispatch still requires a response</div>
+              <p className="text-xs text-amber-800 mt-1">
+                UNAVAILABLE means you will not receive new dispatches. It does not automatically cancel an assignment you already received.
+              </p>
+            </div>
+            <Link href="/donor/alerts">
+              <Button size="sm" className="bg-amber-600 hover:bg-amber-500 text-white font-bold">
+                Review Assignment
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       )}
 
       {/* Donor Availability Control */}
@@ -313,7 +335,9 @@ export default function DonorDashboardPage() {
           label="Active Alerts"
           value={notifiedAlerts.length}
           urgency={notifiedAlerts.length > 0 ? 'critical' : 'normal'}
-          subtext={isAvailable ? 'Pending immediate response' : 'Existing assignment awaiting response'}
+          subtext={notifiedAlerts.length > 0
+            ? (isAvailable ? 'Pending immediate response' : 'Existing assignment awaiting response')
+            : 'No pending emergency response'}
           icon={<AlertOctagon className="w-5 h-5 text-red-400" />}
         />
         <MetricCard
@@ -373,12 +397,15 @@ export default function DonorDashboardPage() {
                               Respond
                             </Button>
                           </Link>
-                        ) : (
+                        ) : ['ACCEPTED', 'EN_ROUTE', 'ARRIVED'].includes(d.status) ? (
                           <Link href={`/donor/dispatches/${d.id}`}>
-                            <Button size="sm" variant="outline" className="h-7 text-xs">
+                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                              <Navigation className="w-3 h-3" />
                               Track Route
                             </Button>
                           </Link>
+                        ) : (
+                          <span className="text-[10px] text-slate-500">No action</span>
                         )}
                       </td>
                     </tr>
