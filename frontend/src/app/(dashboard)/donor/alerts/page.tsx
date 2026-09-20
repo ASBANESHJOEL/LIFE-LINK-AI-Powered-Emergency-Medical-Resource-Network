@@ -182,7 +182,7 @@ export default function DonorAlertsPage() {
                     className="text-xs font-bold gap-1.5 bg-red-600 hover:bg-red-500 shadow-md shadow-red-950/50"
                   >
                     <Check className="w-4 h-4" />
-                    Accept & Begin Transit
+                    Accept Dispatch
                   </Button>
                 </CardFooter>
               </Card>
