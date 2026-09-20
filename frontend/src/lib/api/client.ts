@@ -33,8 +33,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!headers.has('Authorization')) {
     const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      headers.set('Authorization', `Bearer ${session.access_token}`);
+    const devToken = typeof window !== 'undefined'
+      ? window.localStorage.getItem('lifelink_dev_token')
+      : null;
+    const accessToken = devToken || session?.access_token;
+    if (accessToken) {
+      headers.set('Authorization', `Bearer ${accessToken}`);
     }
   }
 
@@ -92,13 +96,26 @@ export const api = {
   auth: {
     getMe: () => request<AuthUserResponse>('/api/auth/me'),
     checkSignup: (email: string) =>
-      request<{ exists: boolean; role?: string; is_active?: boolean; message?: string }>(
+      request<{ exists: boolean; role?: string | null; is_active?: boolean; provisioned?: boolean; message?: string }>(
         '/api/auth/signup-check',
         {
           method: 'POST',
           body: JSON.stringify({ email }),
         }
       ),
+
+    devStatus: () =>
+      request<{ enabled: boolean; environment: string; roles: string[] }>('/api/auth/dev-status'),
+
+    devLogin: (role: 'DONOR' | 'HOSPITAL' | 'BLOOD_BANK' | 'ADMIN') =>
+      request<{
+        token: string;
+        user: AuthUserResponse['user'];
+        expiresAt: string;
+      }>('/api/auth/dev-login', {
+        method: 'POST',
+        body: JSON.stringify({ role }),
+      }),
   },
 
   requests: {

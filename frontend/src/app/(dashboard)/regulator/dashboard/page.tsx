@@ -21,12 +21,17 @@ export default function RegulatorDashboardPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('emergency_requests')
-        .select('*, hospital:hospitals(id, name)')
+        .select('*, hospital:hospitals(id, hospital_name)')
         .order('created_at', { ascending: false })
         .limit(25);
 
       if (error) throw error;
-      setRequests((data as unknown as EmergencyRequest[]) || []);
+      setRequests(((data || []).map((row: any) => ({
+        ...row,
+        hospital: row.hospital
+          ? { id: row.hospital.id, name: row.hospital.hospital_name }
+          : undefined,
+      })) as unknown as EmergencyRequest[]));
     } catch (err) {
       console.error('Failed to load audit data:', err);
     } finally {

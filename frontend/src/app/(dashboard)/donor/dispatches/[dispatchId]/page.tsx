@@ -48,7 +48,7 @@ export default function DonorDispatchTrackingPage() {
       // Fetch dispatch details
       const { data, error } = await supabase
         .from('donor_dispatches')
-        .select('*, donor:donors(*), emergency_requests(*, hospitals:hospital_id(id, name))')
+        .select('*, donor:donors(*), emergency_requests(*, hospitals:hospital_id(id, hospital_name))')
         .eq('id', dispatchId)
         .single();
 
@@ -212,7 +212,7 @@ export default function DonorDispatchTrackingPage() {
   }
 
   const req = dispatch.emergency_requests;
-  const hospitalName = (req as any)?.hospitals?.name || 'Trauma Emergency Facility';
+  const hospitalName = (req as any)?.hospitals?.hospital_name || (req as any)?.hospitals?.name || 'Trauma Emergency Facility';
 
   return (
     <div className="space-y-6">

@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   ExternalLink,
   ShieldCheck,
+  Navigation,
 } from 'lucide-react';
 import { useAuth } from '../../../../lib/supabase/auth-context';
 import { supabase } from '../../../../lib/supabase/client';
@@ -42,7 +43,7 @@ export default function HospitalDashboardPage() {
         // Query emergency requests for this hospital or global network
         let query = supabase
           .from('emergency_requests')
-          .select('*, hospital:hospitals(id, name)')
+          .select('*, hospital:hospitals(id, hospital_name)')
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -51,18 +52,40 @@ export default function HospitalDashboardPage() {
         }
 
         const { data, error } = await query;
-        if (data) {
-          setRequests(data as unknown as EmergencyRequest[]);
+        if (error) throw error;
 
-          const active = data.filter((r) => r.status !== 'FULFILLED' && r.status !== 'CANCELLED');
-          const critical = data.filter((r) => r.urgency === 'CRITICAL' && r.status !== 'FULFILLED');
+        if (data) {
+          setRequests(data.map((row: any) => ({
+            ...row,
+            hospital: row.hospital
+              ? { id: row.hospital.id, name: row.hospital.hospital_name }
+              : undefined,
+          })) as EmergencyRequest[]);
+
+          const active = data.filter((r) => r.status !== 'FULFILLED' && r.status !== 'CANCELLED' && r.status !== 'EXPIRED');
+          const critical = data.filter((r) => r.urgency === 'CRITICAL' && !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(r.status));
           const fulfilled = data.filter((r) => r.status === 'FULFILLED');
+
+          const requestIds = data.map((r) => r.id);
+          let reservedUnits = 0;
+          if (requestIds.length > 0) {
+            const { data: allocations, error: allocationError } = await supabase
+              .from('request_inventory_allocations')
+              .select('request_id, allocated_units, status')
+              .in('request_id', requestIds);
+
+            if (!allocationError && allocations) {
+              reservedUnits = allocations
+                .filter((a: any) => a.status === 'RESERVED' || a.status === 'CONSUMED')
+                .reduce((sum: number, a: any) => sum + Number(a.allocated_units || 0), 0);
+            }
+          }
 
           setStats({
             activeCount: active.length,
             criticalCount: critical.length,
             fulfilledToday: fulfilled.length,
-            totalReservedUnits: data.reduce((acc, r) => acc + (r.status === 'INVENTORY_RESERVED' ? r.quantity : 0), 0),
+            totalReservedUnits: reservedUnits,
           });
         }
       } catch (err) {
@@ -95,12 +118,20 @@ export default function HospitalDashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/hospital/requests/new">
-            <Button size="lg" variant="default" className="gap-2 shadow-lg shadow-red-950/60">
-              <PlusCircle className="w-5 h-5" />
-              Initiate Emergency Request
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/hospital/tracking">
+              <Button size="lg" variant="outline" className="gap-2">
+                <Navigation className="w-5 h-5" />
+                Live Tracking
+              </Button>
+            </Link>
+            <Link href="/hospital/requests/new">
+              <Button size="lg" variant="default" className="gap-2 shadow-lg shadow-red-950/60">
+                <PlusCircle className="w-5 h-5" />
+                Initiate Emergency Request
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
 

@@ -47,10 +47,24 @@ export default function DonorDashboardPage() {
       if (donor) {
         setDonorRecord(donor);
 
+        // Availability is changed through the authenticated backend API/RPC.
+        // Reconcile the UI with that authoritative value after the read-only
+        // donor profile query.
+        try {
+          const availability = await api.donors.getAvailability();
+          setDonorRecord((prev: any) => prev ? {
+            ...prev,
+            availability_status: availability.availabilityStatus,
+            eligibility_status: availability.eligibilityStatus
+          } : prev);
+        } catch (availabilityError) {
+          console.error('Failed to load authoritative donor availability:', availabilityError);
+        }
+
         // Load active dispatches for this donor
         const { data: dispatches } = await supabase
           .from('donor_dispatches')
-          .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(name))')
+          .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(hospital_name))')
           .eq('donor_id', donor.id)
           .order('notified_at', { ascending: false })
           .limit(10);
@@ -111,6 +125,25 @@ export default function DonorDashboardPage() {
       console.error('Failed to update availability:', err);
       if (err?.details?.error === 'ACTIVE_DISPATCH_CONFIRMATION_REQUIRED') {
         setShowWithdrawConfirmModal(true);
+      } else {
+        setAvailabilityMessage(
+          err instanceof Error
+            ? err.message
+            : 'Unable to change availability right now. Please try again.'
+        );
+
+        // Reconcile with the server so a failed/stale write never leaves the
+        // button showing an assumed state.
+        try {
+          const current = await api.donors.getAvailability();
+          setDonorRecord((prev: any) => prev ? {
+            ...prev,
+            availability_status: current.availabilityStatus,
+            eligibility_status: current.eligibilityStatus
+          } : prev);
+        } catch (reconcileError) {
+          console.error('Failed to reconcile donor availability:', reconcileError);
+        }
       }
     } finally {
       setAvailabilityLoading(false);
@@ -325,7 +358,7 @@ export default function DonorDashboardPage() {
                     <tr key={d.id} className="hover:bg-slate-800/40">
                       <td className="p-3 font-mono text-slate-300">{d.id.slice(0, 8)}...</td>
                       <td className="p-3 font-semibold text-white">
-                        {(d as any).emergency_requests?.hospitals?.name || 'Regional Hospital'}
+                        {(d as any).emergency_requests?.hospitals?.hospital_name || (d as any).emergency_requests?.hospitals?.name || 'Regional Hospital'}
                       </td>
                       <td className="p-3">
                         <StatusBadge status={d.status} />

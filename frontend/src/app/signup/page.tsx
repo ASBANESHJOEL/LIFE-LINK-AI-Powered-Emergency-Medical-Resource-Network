@@ -21,7 +21,9 @@ function SignupContent() {
   const [existingAccount, setExistingAccount] = useState<{
     exists: boolean;
     email: string;
-    existingRole?: string;
+    existingRole?: string | null;
+    provisioned?: boolean;
+    message?: string;
   } | null>(null);
 
   const formatRoleName = (r?: string) => {
@@ -55,6 +57,8 @@ function SignupContent() {
           exists: true,
           email: clean,
           existingRole: check.role,
+          provisioned: check.provisioned,
+          message: check.message,
         });
         return;
       }
@@ -73,13 +77,14 @@ function SignupContent() {
     } catch (err) {
       setLoading(false);
       console.error('[SIGNUP] Error checking account:', err);
-      setError('Unable to verify account status. Please try again.');
+      const message = err instanceof Error ? err.message : 'Signup verification failed.';
+      setError(message || 'Unable to verify account status. Please try again.');
     }
   };
 
   // State: Existing user account detected
   if (existingAccount) {
-    const isSameRole = existingAccount.existingRole === role;
+    const isSameRole = Boolean(existingAccount.existingRole) && existingAccount.existingRole === role;
     const existingRoleFormatted = formatRoleName(existingAccount.existingRole);
 
     return (
@@ -98,7 +103,9 @@ function SignupContent() {
               An account already exists with this email.
             </h1>
             <p className="mt-2 text-xs leading-5 text-slate-500">
-              {isSameRole
+              {existingAccount.provisioned === false
+                ? 'This email already has an authentication account, but its LIFE-LINK profile is still awaiting provisioning.'
+                : isSameRole
                 ? `You're already registered as a ${existingRoleFormatted}. Please sign in instead.`
                 : 'An account already exists with this email. Please sign in instead.'}
             </p>
@@ -108,8 +115,17 @@ function SignupContent() {
             <span className="text-slate-500">Registered account: </span>
             <strong className="text-slate-900">{existingAccount.email}</strong>
             <div className="mt-1 text-[11px] text-slate-500">
-              Role: <span className="font-semibold text-slate-800">{existingRoleFormatted}</span>
+              {existingAccount.existingRole ? (
+                <>Role: <span className="font-semibold text-slate-800">{existingRoleFormatted}</span></>
+              ) : (
+                <>Status: <span className="font-semibold text-slate-800">Pending provisioning</span></>
+              )}
             </div>
+            {existingAccount.message && (
+              <div className="mt-2 text-[11px] leading-4 text-slate-500">
+                {existingAccount.message}
+              </div>
+            )}
           </div>
 
           <div className="mt-6 space-y-3">
