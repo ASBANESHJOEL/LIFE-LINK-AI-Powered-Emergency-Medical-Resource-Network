@@ -48,7 +48,7 @@ export default function BloodBankDashboardPage() {
 
   const totalAvailable = inventory.reduce((sum, item) => sum + (item.available_units || 0), 0);
   const totalReserved = inventory.reduce((sum, item) => sum + (item.reserved_units || 0), 0);
-  const pendingTransfers = transfers.filter((t) => t.status === 'PENDING').length;
+  const pendingTransfers = transfers.filter((t) => t.status === 'OFFERED').length;
 
   return (
     <div className="space-y-6">
