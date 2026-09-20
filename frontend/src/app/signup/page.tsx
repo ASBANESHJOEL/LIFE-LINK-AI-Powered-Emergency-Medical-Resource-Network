@@ -7,6 +7,7 @@ import { ArrowRight, ChevronLeft, AlertCircle, LogIn, UserCheck } from 'lucide-r
 import { useAuth } from '../../lib/supabase/auth-context';
 import { normalizeEmail, savePendingEmail, saveAuthIntent } from '../../lib/supabase/pending-email';
 import { api } from '../../lib/api/client';
+import { BrandLogo } from '../../components/shared/BrandLogo';
 
 function SignupContent() {
   const router = useRouter();
@@ -90,10 +91,7 @@ function SignupContent() {
     return (
       <div className="lifelink-page min-h-screen flex items-center justify-center px-4 py-10">
         <div className="auth-surface p-6 sm:p-9">
-          <Link href="/" className="brand-mark">
-            <span className="brand-mark-icon">+</span>
-            <span className="brand-mark-word">LIFE LINK</span>
-          </Link>
+          <BrandLogo href="/" />
 
           <div className="mt-8 text-center sm:text-left">
             <div className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600 mb-3">
