@@ -64,7 +64,7 @@ export default function DonorDashboardPage() {
         // Load active dispatches for this donor
         const { data: dispatches } = await supabase
           .from('donor_dispatches')
-          .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(name))')
+          .select('*, emergency_requests(id, blood_group, urgency, hospital_id, hospitals:hospital_id(hospital_name))')
           .eq('donor_id', donor.id)
           .order('notified_at', { ascending: false })
           .limit(10);
@@ -358,7 +358,7 @@ export default function DonorDashboardPage() {
                     <tr key={d.id} className="hover:bg-slate-800/40">
                       <td className="p-3 font-mono text-slate-300">{d.id.slice(0, 8)}...</td>
                       <td className="p-3 font-semibold text-white">
-                        {(d as any).emergency_requests?.hospitals?.name || 'Regional Hospital'}
+                        {(d as any).emergency_requests?.hospitals?.hospital_name || (d as any).emergency_requests?.hospitals?.name || 'Regional Hospital'}
                       </td>
                       <td className="p-3">
                         <StatusBadge status={d.status} />
