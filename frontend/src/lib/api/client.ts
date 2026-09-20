@@ -92,7 +92,7 @@ export const api = {
   auth: {
     getMe: () => request<AuthUserResponse>('/api/auth/me'),
     checkSignup: (email: string) =>
-      request<{ exists: boolean; role?: string; is_active?: boolean; message?: string }>(
+      request<{ exists: boolean; role?: string | null; is_active?: boolean; provisioned?: boolean; message?: string }>(
         '/api/auth/signup-check',
         {
           method: 'POST',
