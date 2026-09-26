@@ -89,7 +89,7 @@ export default function HospitalDashboardPage() {
         <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">At a glance</p><h2 id="overview-heading" className="mt-1 text-lg font-bold text-slate-900">Emergency overview</h2></div><span className="text-xs text-slate-400">Current request data</span></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Active requests" value={stats.activeCount} urgency={stats.activeCount ? 'warning' : 'normal'} subtext="Under active resolution" icon={<AlertOctagon className="size-5" />} />
-          <MetricCard label="Critical requests" value={stats.criticalCount} urgency={stats.criticalCount ? 'critical' : 'normal'} subtext="Prioritize within 15 min" icon={<Activity className="size-5" />} />
+          <MetricCard label="Critical requests" value={stats.criticalCount} urgency={stats.criticalCount ? 'critical' : 'normal'} subtext="Requires urgent attention" icon={<Activity className="size-5" />} />
           <MetricCard label="Fulfilled today" value={stats.fulfilledToday} subtext="Deliveries confirmed" icon={<CheckCircle2 className="size-5 text-emerald-600" />} />
           <MetricCard label="Units secured" value={stats.totalReservedUnits} subtext="Reserved across network" icon={<Database className="size-5 text-[#0067B8]" />} />
         </div>

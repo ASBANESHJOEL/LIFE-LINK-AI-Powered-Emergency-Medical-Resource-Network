@@ -138,24 +138,3 @@ button, input, textarea, select { font: inherit; }
 
 .public-section-title { color: #0f172a; font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -.03em; }
 .public-section-copy { color: #64748b; font-size: 14px; line-height: 1.7; }
-
-/*
- * Existing operations screens were authored with a dark utility palette.
- * These compatibility overrides move that palette onto the same light Figma
- * foundation without requiring every workflow screen to be rewritten.
- */
-.bg-\[\#090d16\] { background-color: #f8fafc !important; }
-.bg-slate-950, .bg-slate-950\/40, .bg-slate-950\/60, .bg-slate-950\/80 { background-color: #ffffff !important; }
-.bg-slate-900, .bg-slate-900\/40, .bg-slate-900\/60, .bg-slate-900\/75, .bg-slate-900\/80, .bg-slate-900\/90 { background-color: #ffffff !important; }
-.bg-slate-800, .bg-slate-800\/10, .bg-slate-800\/30, .bg-slate-800\/40, .bg-slate-800\/50, .bg-slate-800\/60, .bg-slate-800\/80 { background-color: #f8fafc !important; }
-.text-white { color: #0f172a !important; }
-.text-slate-100 { color: #0f172a !important; }
-.text-slate-200 { color: #1e293b !important; }
-.text-slate-300 { color: #334155 !important; }
-.text-slate-400 { color: #64748b !important; }
-.text-slate-500 { color: #94a3b8 !important; }
-.border-slate-800, .border-slate-800\/40, .border-slate-800\/60, .border-slate-800\/80 { border-color: #e2e8f0 !important; }
-.border-slate-700, .border-slate-700\/60, .border-slate-700\/80 { border-color: #cbd5e1 !important; }
-.divide-slate-800\/40 > :not([hidden]) ~ :not([hidden]),
-.divide-slate-800\/60 > :not([hidden]) ~ :not([hidden]) { border-color: #e2e8f0 !important; }
-.hover\:bg-slate-800\/40:hover, .hover\:bg-slate-900\/60:hover { background-color: #f8fafc !important; }
