@@ -27,6 +27,11 @@ import { BloodTypeBadge } from '../../../../components/shared/BloodTypeBadge';
 import { EmergencyRequest } from '../../../../types/requests';
 
 const formatTime = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const isToday = (value: string) => {
+  const date = new Date(value);
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
+};
 
 export default function HospitalDashboardPage() {
   const { organization } = useAuth();
@@ -47,13 +52,13 @@ export default function HospitalDashboardPage() {
         setRequests(data.map((row: any) => ({ ...row, hospital: row.hospital ? { id: row.hospital.id, name: row.hospital.hospital_name } : undefined })) as EmergencyRequest[]);
         const active = data.filter((r) => !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(r.status));
         const critical = active.filter((r) => r.urgency === 'CRITICAL');
-        const fulfilled = data.filter((r) => r.status === 'FULFILLED');
+        const fulfilledToday = data.filter((r) => r.status === 'FULFILLED' && r.completed_at && isToday(r.completed_at));
         let reservedUnits = 0;
         if (data.length) {
           const { data: allocations } = await supabase.from('request_inventory_allocations').select('request_id, allocated_units, status').in('request_id', data.map((r) => r.id));
           reservedUnits = (allocations || []).filter((a: any) => ['RESERVED', 'CONSUMED'].includes(a.status)).reduce((sum: number, a: any) => sum + Number(a.allocated_units || 0), 0);
         }
-        setStats({ activeCount: active.length, criticalCount: critical.length, fulfilledToday: fulfilled.length, totalReservedUnits: reservedUnits });
+        setStats({ activeCount: active.length, criticalCount: critical.length, fulfilledToday: fulfilledToday.length, totalReservedUnits: reservedUnits });
       } catch (err) {
         console.error('Failed to load emergency requests:', err);
       } finally {
@@ -64,16 +69,15 @@ export default function HospitalDashboardPage() {
   }, [organization?.hospitalId]);
 
   const activeRequests = requests.filter((request) => !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(request.status));
-  const inventoryProgress = stats.totalReservedUnits ? Math.min(100, Math.round((stats.totalReservedUnits / Math.max(stats.totalReservedUnits + 3, 1)) * 100)) : 0;
 
   return (
     <div className="flex flex-col gap-7">
       <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
-          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#0067B8]"><span className="size-2 rounded-full bg-[#0067B8]" /> Live network view</div>
+          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#0067B8]"><span className="size-2 rounded-full bg-[#0067B8]" /> Network overview</div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Emergency operations overview</h1>
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Coordinate blood resources, monitor active requests, and keep every response moving from one secure workspace.</p>
-          <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500"><span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700"><span className="size-2 rounded-full bg-emerald-500" /> Network operational</span><span className="inline-flex items-center gap-2"><Building2 className="size-4 text-slate-400" /> {organization?.hospital?.name || 'Hospital workspace'}</span></div>
+          <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500"><span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700"><span className="size-2 rounded-full bg-emerald-500" /> Network status</span><span className="inline-flex items-center gap-2"><Building2 className="size-4 text-slate-400" /> {organization?.hospital?.name || 'Hospital workspace'}</span></div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/hospital/tracking"><Button variant="outline" className="gap-2"><Navigation data-icon="inline-start" /> Live tracking</Button></Link>
@@ -82,7 +86,7 @@ export default function HospitalDashboardPage() {
       </section>
 
       <section aria-labelledby="overview-heading">
-        <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">At a glance</p><h2 id="overview-heading" className="mt-1 text-lg font-bold text-slate-900">Emergency overview</h2></div><span className="text-xs text-slate-400">Updated just now</span></div>
+        <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">At a glance</p><h2 id="overview-heading" className="mt-1 text-lg font-bold text-slate-900">Emergency overview</h2></div><span className="text-xs text-slate-400">Current request data</span></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Active requests" value={stats.activeCount} urgency={stats.activeCount ? 'warning' : 'normal'} subtext="Under active resolution" icon={<AlertOctagon className="size-5" />} />
           <MetricCard label="Critical requests" value={stats.criticalCount} urgency={stats.criticalCount ? 'critical' : 'normal'} subtext="Prioritize within 15 min" icon={<Activity className="size-5" />} />
@@ -103,7 +107,7 @@ export default function HospitalDashboardPage() {
         </Card>
 
         <div className="flex flex-col gap-5">
-          <Card className="border-slate-200 shadow-sm"><CardHeader className="pb-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Network resources</p><CardTitle className="mt-1 text-lg text-slate-950">Resource availability</CardTitle></CardHeader><CardContent><div className="flex items-end justify-between"><div><p className="text-3xl font-bold text-slate-950">{stats.totalReservedUnits}</p><p className="text-xs text-slate-500">units currently secured</p></div><Database className="size-8 text-blue-100" /></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#0067B8] transition-all" style={{ width: `${inventoryProgress}%` }} /></div><div className="mt-2 flex justify-between text-[11px] text-slate-400"><span>Inventory + peer banks</span><span>{inventoryProgress}% coordinated</span></div><Link href="/hospital/inventory" className="mt-5 inline-flex items-center gap-1 text-xs font-bold text-[#0067B8]">Review inventory <ArrowUpRight className="size-3.5" /></Link></CardContent></Card>
+          <Card className="border-slate-200 shadow-sm"><CardHeader className="pb-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Network resources</p><CardTitle className="mt-1 text-lg text-slate-950">Resource availability</CardTitle></CardHeader><CardContent><div className="flex items-end justify-between"><div><p className="text-3xl font-bold text-slate-950">{stats.totalReservedUnits}</p><p className="text-xs text-slate-500">units currently secured</p></div><Database className="size-8 text-blue-100" /></div><p className="mt-5 text-xs text-slate-500">Reserved and consumed allocations across current requests.</p><Link href="/hospital/inventory" className="mt-5 inline-flex items-center gap-1 text-xs font-bold text-[#0067B8]">Review inventory <ArrowUpRight className="size-3.5" /></Link></CardContent></Card>
           <Card className="border-slate-200 shadow-sm"><CardHeader className="pb-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Operational feed</p><CardTitle className="mt-1 text-lg text-slate-950">Recent activity</CardTitle></CardHeader><CardContent className="flex flex-col gap-4">{requests.slice(0, 3).map((request) => <div key={request.id} className="flex gap-3"><span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#0067B8]"><Clock3 className="size-3.5" /></span><div><p className="text-xs font-semibold text-slate-700">Request <span className="font-mono text-slate-400">#{request.id.slice(0, 6)}</span> updated</p><p className="mt-1 text-[11px] text-slate-400">{formatTime(request.created_at)} · {request.status.replace(/_/g, ' ')}</p></div></div>)}{!requests.length && <p className="text-xs text-slate-500">Activity will appear here as requests move through the network.</p>}</CardContent></Card>
         </div>
       </div>
