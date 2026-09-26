@@ -1,254 +1,114 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Activity,
   AlertOctagon,
-  PlusCircle,
-  Database,
-  Building2,
-  Users,
-  Clock,
   ArrowUpRight,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  Database,
   ExternalLink,
-  ShieldCheck,
   Navigation,
+  Plus,
+  ShieldCheck,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../../../../lib/supabase/auth-context';
 import { supabase } from '../../../../lib/supabase/client';
 import { Button } from '../../../../components/ui/button';
-import { Card, CardHeader, CardTitle, CardContent } from '../../../../components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { MetricCard } from '../../../../components/shared/MetricCard';
 import { StatusBadge } from '../../../../components/shared/StatusBadge';
 import { UrgencyBadge } from '../../../../components/shared/UrgencyBadge';
 import { BloodTypeBadge } from '../../../../components/shared/BloodTypeBadge';
 import { EmergencyRequest } from '../../../../types/requests';
 
+const formatTime = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 export default function HospitalDashboardPage() {
-  const { user, organization } = useAuth();
+  const { organization } = useAuth();
   const [requests, setRequests] = useState<EmergencyRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    activeCount: 0,
-    criticalCount: 0,
-    fulfilledToday: 0,
-    totalReservedUnits: 0,
-  });
+  const [stats, setStats] = useState({ activeCount: 0, criticalCount: 0, fulfilledToday: 0, totalReservedUnits: 0 });
 
   useEffect(() => {
     async function loadHospitalData() {
       try {
         setLoading(true);
-        // Query emergency requests for this hospital or global network
-        let query = supabase
-          .from('emergency_requests')
-          .select('*, hospital:hospitals(id, hospital_name)')
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (organization?.hospitalId) {
-          query = query.eq('hospital_id', organization.hospitalId);
-        }
-
+        let query = supabase.from('emergency_requests').select('*, hospital:hospitals(id, hospital_name)').order('created_at', { ascending: false }).limit(20);
+        if (organization?.hospitalId) query = query.eq('hospital_id', organization.hospitalId);
         const { data, error } = await query;
         if (error) throw error;
+        if (!data) return;
 
-        if (data) {
-          setRequests(data.map((row: any) => ({
-            ...row,
-            hospital: row.hospital
-              ? { id: row.hospital.id, name: row.hospital.hospital_name }
-              : undefined,
-          })) as EmergencyRequest[]);
-
-          const active = data.filter((r) => r.status !== 'FULFILLED' && r.status !== 'CANCELLED' && r.status !== 'EXPIRED');
-          const critical = data.filter((r) => r.urgency === 'CRITICAL' && !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(r.status));
-          const fulfilled = data.filter((r) => r.status === 'FULFILLED');
-
-          const requestIds = data.map((r) => r.id);
-          let reservedUnits = 0;
-          if (requestIds.length > 0) {
-            const { data: allocations, error: allocationError } = await supabase
-              .from('request_inventory_allocations')
-              .select('request_id, allocated_units, status')
-              .in('request_id', requestIds);
-
-            if (!allocationError && allocations) {
-              reservedUnits = allocations
-                .filter((a: any) => a.status === 'RESERVED' || a.status === 'CONSUMED')
-                .reduce((sum: number, a: any) => sum + Number(a.allocated_units || 0), 0);
-            }
-          }
-
-          setStats({
-            activeCount: active.length,
-            criticalCount: critical.length,
-            fulfilledToday: fulfilled.length,
-            totalReservedUnits: reservedUnits,
-          });
+        setRequests(data.map((row: any) => ({ ...row, hospital: row.hospital ? { id: row.hospital.id, name: row.hospital.hospital_name } : undefined })) as EmergencyRequest[]);
+        const active = data.filter((r) => !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(r.status));
+        const critical = active.filter((r) => r.urgency === 'CRITICAL');
+        const fulfilled = data.filter((r) => r.status === 'FULFILLED');
+        let reservedUnits = 0;
+        if (data.length) {
+          const { data: allocations } = await supabase.from('request_inventory_allocations').select('request_id, allocated_units, status').in('request_id', data.map((r) => r.id));
+          reservedUnits = (allocations || []).filter((a: any) => ['RESERVED', 'CONSUMED'].includes(a.status)).reduce((sum: number, a: any) => sum + Number(a.allocated_units || 0), 0);
         }
+        setStats({ activeCount: active.length, criticalCount: critical.length, fulfilledToday: fulfilled.length, totalReservedUnits: reservedUnits });
       } catch (err) {
         console.error('Failed to load emergency requests:', err);
       } finally {
         setLoading(false);
       }
     }
-
     loadHospitalData();
   }, [organization?.hospitalId]);
 
+  const activeRequests = requests.filter((request) => !['FULFILLED', 'CANCELLED', 'EXPIRED'].includes(request.status));
+  const inventoryProgress = stats.totalReservedUnits ? Math.min(100, Math.round((stats.totalReservedUnits / Math.max(stats.totalReservedUnits + 3, 1)) * 100)) : 0;
+
   return (
-    <div className="space-y-6">
-      {/* Top Banner / Hospital Context */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-r from-red-950/40 via-slate-900 to-slate-900 border border-red-900/40 backdrop-blur-md">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="h-2 w-2 rounded-full bg-red-500 animate-ping"></span>
-            <span className="text-xs font-bold uppercase tracking-wider text-red-400">
-              Trauma Operations Active
-            </span>
-          </div>
-          <h1 className="text-2xl font-black text-white tracking-tight">
-            {organization?.hospital?.name || 'Trauma Center Command Center'}
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Real-time emergency blood resource coordination & automated multi-tier dispatch
-          </p>
+    <div className="flex flex-col gap-7">
+      <section className="flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-2xl">
+          <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-[#0067B8]"><span className="size-2 rounded-full bg-[#0067B8]" /> Live network view</div>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Emergency operations overview</h1>
+          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Coordinate blood resources, monitor active requests, and keep every response moving from one secure workspace.</p>
+          <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500"><span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700"><span className="size-2 rounded-full bg-emerald-500" /> Network operational</span><span className="inline-flex items-center gap-2"><Building2 className="size-4 text-slate-400" /> {organization?.hospital?.name || 'Hospital workspace'}</span></div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/hospital/tracking"><Button variant="outline" className="gap-2"><Navigation data-icon="inline-start" /> Live tracking</Button></Link>
+          <Link href="/hospital/requests/new"><Button className="gap-2"><Plus data-icon="inline-start" /> Create request</Button></Link>
+        </div>
+      </section>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Link href="/hospital/tracking">
-              <Button size="lg" variant="outline" className="gap-2">
-                <Navigation className="w-5 h-5" />
-                Live Tracking
-              </Button>
-            </Link>
-            <Link href="/hospital/requests/new">
-              <Button size="lg" variant="default" className="gap-2 shadow-lg shadow-red-950/60">
-                <PlusCircle className="w-5 h-5" />
-                Initiate Emergency Request
-              </Button>
-            </Link>
-          </div>
+      <section aria-labelledby="overview-heading">
+        <div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">At a glance</p><h2 id="overview-heading" className="mt-1 text-lg font-bold text-slate-900">Emergency overview</h2></div><span className="text-xs text-slate-400">Updated just now</span></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Active requests" value={stats.activeCount} urgency={stats.activeCount ? 'warning' : 'normal'} subtext="Under active resolution" icon={<AlertOctagon className="size-5" />} />
+          <MetricCard label="Critical requests" value={stats.criticalCount} urgency={stats.criticalCount ? 'critical' : 'normal'} subtext="Prioritize within 15 min" icon={<Activity className="size-5" />} />
+          <MetricCard label="Fulfilled today" value={stats.fulfilledToday} subtext="Deliveries confirmed" icon={<CheckCircle2 className="size-5 text-emerald-600" />} />
+          <MetricCard label="Units secured" value={stats.totalReservedUnits} subtext="Reserved across network" icon={<Database className="size-5 text-[#0067B8]" />} />
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card className="overflow-hidden border-slate-200 shadow-sm">
+          <CardHeader className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Response queue</p><CardTitle className="mt-1 text-lg text-slate-950">Active emergencies</CardTitle><p className="mt-1 text-xs text-slate-500">Requests requiring coordination across the response network.</p></div><Link href="/hospital/requests" className="inline-flex items-center gap-1 text-xs font-bold text-[#0067B8] hover:underline">View all <ArrowUpRight className="size-3.5" /></Link></CardHeader>
+          <CardContent className="p-0">
+            {loading ? <div className="flex flex-col gap-3 p-5">{[1, 2, 3].map((item) => <div key={item} className="h-16 animate-pulse rounded-lg bg-slate-100" />)}</div> : activeRequests.length === 0 ? <div className="flex flex-col items-center px-6 py-14 text-center"><CheckCircle2 className="size-10 text-emerald-500" /><h3 className="mt-3 text-sm font-bold text-slate-900">No active emergencies</h3><p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">All emergency requests are currently resolved.</p><Link href="/hospital/requests/new" className="mt-4"><Button size="sm">Create request</Button></Link></div> : <>
+              <div className="hidden overflow-x-auto md:block"><table className="w-full text-left"><thead className="bg-slate-50 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><tr><th className="px-5 py-3">Request</th><th className="px-3 py-3">Need</th><th className="px-3 py-3">Urgency</th><th className="px-3 py-3">Status</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{activeRequests.slice(0, 8).map((req) => <tr key={req.id} className="transition-colors hover:bg-slate-50"><td className="px-5 py-4"><div className="flex items-center gap-3"><BloodTypeBadge bloodGroup={req.blood_group} size="sm" /><div><p className="text-sm font-bold text-slate-900">{req.quantity} units <span className="font-normal text-slate-500">{req.resource_type.replace(/_/g, ' ')}</span></p><p className="mt-0.5 font-mono text-[10px] text-slate-400">#{req.id.slice(0, 8)}</p></div></div></td><td className="px-3 py-4 text-xs font-semibold text-slate-600">{req.blood_group.replace('_', ' ')}</td><td className="px-3 py-4"><UrgencyBadge urgency={req.urgency} /></td><td className="px-3 py-4"><StatusBadge status={req.status} /></td><td className="px-5 py-4 text-right"><Link href={`/hospital/requests/${req.id}`}><Button size="sm" variant="outline" className="gap-1 text-xs">Open <ExternalLink data-icon="inline-end" /></Button></Link></td></tr>)}</tbody></table></div>
+              <div className="flex flex-col gap-3 p-4 md:hidden">{activeRequests.slice(0, 8).map((req) => <Link key={req.id} href={`/hospital/requests/${req.id}`} className="rounded-xl border border-slate-200 p-4 transition-colors hover:border-[#0067B8] hover:bg-blue-50/30"><div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><BloodTypeBadge bloodGroup={req.blood_group} size="sm" /><div><p className="text-sm font-bold text-slate-900">{req.quantity} units</p><p className="text-xs text-slate-500">{req.resource_type.replace(/_/g, ' ')}</p></div></div><UrgencyBadge urgency={req.urgency} /></div><div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3"><StatusBadge status={req.status} /><span className="text-xs font-bold text-[#0067B8]">Open request</span></div></Link>)}</div>
+            </>}
+          </CardContent>
+        </Card>
+
+        <div className="flex flex-col gap-5">
+          <Card className="border-slate-200 shadow-sm"><CardHeader className="pb-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Network resources</p><CardTitle className="mt-1 text-lg text-slate-950">Resource availability</CardTitle></CardHeader><CardContent><div className="flex items-end justify-between"><div><p className="text-3xl font-bold text-slate-950">{stats.totalReservedUnits}</p><p className="text-xs text-slate-500">units currently secured</p></div><Database className="size-8 text-blue-100" /></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-[#0067B8] transition-all" style={{ width: `${inventoryProgress}%` }} /></div><div className="mt-2 flex justify-between text-[11px] text-slate-400"><span>Inventory + peer banks</span><span>{inventoryProgress}% coordinated</span></div><Link href="/hospital/inventory" className="mt-5 inline-flex items-center gap-1 text-xs font-bold text-[#0067B8]">Review inventory <ArrowUpRight className="size-3.5" /></Link></CardContent></Card>
+          <Card className="border-slate-200 shadow-sm"><CardHeader className="pb-3"><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Operational feed</p><CardTitle className="mt-1 text-lg text-slate-950">Recent activity</CardTitle></CardHeader><CardContent className="flex flex-col gap-4">{requests.slice(0, 3).map((request) => <div key={request.id} className="flex gap-3"><span className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#0067B8]"><Clock3 className="size-3.5" /></span><div><p className="text-xs font-semibold text-slate-700">Request <span className="font-mono text-slate-400">#{request.id.slice(0, 6)}</span> updated</p><p className="mt-1 text-[11px] text-slate-400">{formatTime(request.created_at)} · {request.status.replace(/_/g, ' ')}</p></div></div>)}{!requests.length && <p className="text-xs text-slate-500">Activity will appear here as requests move through the network.</p>}</CardContent></Card>
         </div>
       </div>
 
-      {/* KPI Metrics Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard
-          label="Active Emergencies"
-          value={stats.activeCount}
-          urgency={stats.activeCount > 0 ? 'warning' : 'normal'}
-          subtext="Under active resolution"
-          icon={<AlertOctagon className="w-5 h-5" />}
-        />
-        <MetricCard
-          label="Critical Priority"
-          value={stats.criticalCount}
-          urgency={stats.criticalCount > 0 ? 'critical' : 'normal'}
-          subtext="SLA < 15 min dispatch"
-          icon={<Activity className="w-5 h-5" />}
-        />
-        <MetricCard
-          label="Fulfilled Requests"
-          value={stats.fulfilledToday}
-          subtext="Bedside deliveries confirmed"
-          icon={<ShieldCheck className="w-5 h-5 text-emerald-400" />}
-        />
-        <MetricCard
-          label="Reserved Units"
-          value={`${stats.totalReservedUnits} Units`}
-          subtext="Secured across bank nodes"
-          icon={<Database className="w-5 h-5 text-sky-400" />}
-        />
-      </div>
-
-      {/* Active Emergency Requests Table */}
-      <Card className="border-slate-800 bg-slate-900/80">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-base text-white">Active Emergency Requests</CardTitle>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Live tracking of trauma requests currently in the 3-tier pipeline
-            </p>
-          </div>
-          <Link
-            href="/hospital/requests"
-            className="text-xs font-semibold text-sky-400 hover:text-sky-300 flex items-center gap-1"
-          >
-            View All ({requests.length})
-            <ArrowUpRight className="w-3.5 h-3.5" />
-          </Link>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="p-8 text-center text-xs text-slate-400">Loading emergency telemetry...</div>
-          ) : requests.length === 0 ? (
-            <div className="p-12 text-center">
-              <ShieldCheck className="w-10 h-10 text-emerald-500/50 mx-auto mb-3" />
-              <p className="text-sm font-semibold text-white">No Active Emergency Requests</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
-                All trauma resource pipelines are currently quiescent. Use the button above to log an urgent request.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-950/60 text-[11px] uppercase tracking-wider text-slate-400 border-y border-slate-800">
-                  <tr>
-                    <th className="py-3 px-4">Request ID</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Component</th>
-                    <th className="py-3 px-4">Units</th>
-                    <th className="py-3 px-4">Urgency</th>
-                    <th className="py-3 px-4">Pipeline Status</th>
-                    <th className="py-3 px-4">Logged At</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {requests.slice(0, 8).map((req) => (
-                    <tr key={req.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3.5 px-4 font-mono text-xs text-slate-300">
-                        {req.id.slice(0, 8)}...
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <BloodTypeBadge bloodGroup={req.blood_group} size="sm" />
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-slate-300 font-medium">
-                        {req.resource_type.replace(/_/g, ' ')}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-white text-sm">
-                        {req.quantity}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <UrgencyBadge urgency={req.urgency} />
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <StatusBadge status={req.status} />
-                      </td>
-                      <td className="py-3.5 px-4 text-xs text-slate-400">
-                        {new Date(req.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <Link href={`/hospital/requests/${req.id}`}>
-                          <Button size="sm" variant="outline" className="text-xs h-7 gap-1">
-                            Resolve
-                            <ExternalLink className="w-3 h-3" />
-                          </Button>
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-xs text-blue-900"><span className="inline-flex items-center gap-2 font-semibold"><ShieldCheck className="size-4 text-[#0067B8]" /> Secure coordination workspace</span><span className="inline-flex items-center gap-2 text-blue-800/70"><Users className="size-4" /> Multi-tier dispatch enabled</span></div>
     </div>
   );
 }
