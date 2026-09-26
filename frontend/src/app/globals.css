@@ -3,10 +3,10 @@
 @tailwind utilities;
 
 :root {
-  --brand-blue: #2563eb;
-  --brand-blue-hover: #1d4ed8;
-  --brand-blue-light: #eff6ff;
-  --brand-blue-subtle: rgba(37, 99, 235, 0.08);
+  --brand-blue: #0067b8;
+  --brand-blue-hover: #005a9e;
+  --brand-blue-light: #e8f3fb;
+  --brand-blue-subtle: rgba(0, 103, 184, 0.08);
   --brand-red: #ef4444;
   --brand-red-hover: #dc2626;
   --brand-red-light: #fef2f2;

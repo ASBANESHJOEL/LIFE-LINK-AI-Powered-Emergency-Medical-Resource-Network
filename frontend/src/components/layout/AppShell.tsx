@@ -3,18 +3,26 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, AlertOctagon, Building2, Database, Bell, LogOut, Menu, X, ShieldCheck, Navigation, HeartHandshake } from 'lucide-react';
+import { Activity, AlertOctagon, Building2, Database, Bell, LogOut, Menu, X, ShieldCheck, Navigation, HeartHandshake, UserRound, ChevronRight } from 'lucide-react';
 import { useAuth } from '../../lib/supabase/auth-context';
 import { api } from '../../lib/api/client';
 import { BrandLogo } from '../shared/BrandLogo';
 
-interface NavItem { label: string; href: string; icon: React.ReactNode; }
+interface NavItem { label: string; href: string; icon: React.ReactNode; description?: string; }
 
 const publicPaths = new Set([
   '/', '/login', '/verify-otp', '/choose-role', '/signup',
   '/about', '/faq', '/contact', '/terms', '/privacy',
   '/inactive', '/unauthorized', '/unprovisioned'
 ]);
+
+const roleLabels: Record<string, string> = {
+  HOSPITAL: 'Hospital operations',
+  BLOOD_BANK: 'Blood bank operations',
+  DONOR: 'Donor network',
+  ADMIN: 'Network administration',
+  REGULATOR: 'Regulatory oversight',
+};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -39,139 +47,63 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated]);
 
   useEffect(() => {
-    if (isLoading) return;
-    if (publicPaths.has(currentPath)) return;
-
-    if (profileStatus === 'UNPROVISIONED') {
-      router.push('/unprovisioned');
-      return;
-    }
-
-    if (profileStatus === 'INACTIVE') {
-      router.push('/inactive');
-      return;
-    }
-
-    if (!isAuthenticated) {
-      router.push('/login');
-    }
+    if (isLoading || publicPaths.has(currentPath)) return;
+    if (profileStatus === 'UNPROVISIONED') return void router.push('/unprovisioned');
+    if (profileStatus === 'INACTIVE') return void router.push('/inactive');
+    if (!isAuthenticated) router.push('/login');
   }, [isLoading, isAuthenticated, profileStatus, currentPath, router]);
 
   const getNavItems = (): NavItem[] => {
     if (!user) return [];
+    const dashboard = { label: 'Overview', description: 'Network at a glance', href: user.role === 'HOSPITAL' ? '/hospital/dashboard' : user.role === 'BLOOD_BANK' ? '/blood-bank/dashboard' : user.role === 'DONOR' ? '/donor/dashboard' : '/regulator/dashboard', icon: <Activity aria-hidden="true" /> };
     switch (user.role) {
-      case 'HOSPITAL':
-        return [
-          { label: 'Dashboard', href: '/hospital/dashboard', icon: <Activity className="w-4 h-4" /> },
-          { label: 'Emergency Requests', href: '/hospital/requests', icon: <AlertOctagon className="w-4 h-4" /> },
-          { label: 'New Request', href: '/hospital/requests/new', icon: <AlertOctagon className="w-4 h-4" /> },
-          { label: 'Inventory', href: '/hospital/inventory', icon: <Database className="w-4 h-4" /> },
-          { label: 'Peer Transfers', href: '/hospital/transfers', icon: <Building2 className="w-4 h-4" /> },
-          { label: 'Live Tracking', href: '/hospital/tracking', icon: <Navigation className="w-4 h-4" /> },
-        ];
-      case 'BLOOD_BANK':
-        return [
-          { label: 'Dashboard', href: '/blood-bank/dashboard', icon: <Activity className="w-4 h-4" /> },
-          { label: 'Blood Inventory', href: '/blood-bank/inventory', icon: <Database className="w-4 h-4" /> },
-          { label: 'Request Stock', href: '/blood-bank/requests', icon: <AlertOctagon className="w-4 h-4" /> },
-          { label: 'Transfer Requests', href: '/blood-bank/transfers', icon: <HeartHandshake className="w-4 h-4" /> },
-        ];
-      case 'DONOR':
-        return [
-          { label: 'Dashboard', href: '/donor/dashboard', icon: <Activity className="w-4 h-4" /> },
-          { label: 'Emergency Alerts', href: '/donor/alerts', icon: <AlertOctagon className="w-4 h-4" /> },
-          { label: 'Live Tracking', href: '/donor/tracking', icon: <Navigation className="w-4 h-4" /> },
-          { label: 'Live Dispatches', href: '/donor/dispatches', icon: <Navigation className="w-4 h-4" /> },
-        ];
+      case 'HOSPITAL': return [dashboard, { label: 'Emergency requests', href: '/hospital/requests', icon: <AlertOctagon aria-hidden="true" /> }, { label: 'New request', href: '/hospital/requests/new', icon: <AlertOctagon aria-hidden="true" /> }, { label: 'Inventory', href: '/hospital/inventory', icon: <Database aria-hidden="true" /> }, { label: 'Peer transfers', href: '/hospital/transfers', icon: <Building2 aria-hidden="true" /> }, { label: 'Live tracking', href: '/hospital/tracking', icon: <Navigation aria-hidden="true" /> }];
+      case 'BLOOD_BANK': return [dashboard, { label: 'Blood inventory', href: '/blood-bank/inventory', icon: <Database aria-hidden="true" /> }, { label: 'Request stock', href: '/blood-bank/requests', icon: <AlertOctagon aria-hidden="true" /> }, { label: 'Transfer requests', href: '/blood-bank/transfers', icon: <HeartHandshake aria-hidden="true" /> }];
+      case 'DONOR': return [dashboard, { label: 'Emergency alerts', href: '/donor/alerts', icon: <AlertOctagon aria-hidden="true" /> }, { label: 'Live dispatches', href: '/donor/dispatches', icon: <Navigation aria-hidden="true" /> }, { label: 'Tracking', href: '/donor/tracking', icon: <Navigation aria-hidden="true" /> }];
       case 'ADMIN':
-      case 'REGULATOR':
-        return [
-          { label: 'Audit Dashboard', href: '/regulator/dashboard', icon: <Activity className="w-4 h-4" /> },
-          { label: 'Network Operations', href: '/hospital/requests', icon: <Building2 className="w-4 h-4" /> },
-        ];
-      default:
-        return [];
+      case 'REGULATOR': return [dashboard, { label: 'Network operations', href: '/hospital/requests', icon: <Building2 aria-hidden="true" /> }];
+      default: return [];
     }
   };
 
   const navItems = getNavItems();
   const handleSignOut = async () => { await signOut(); router.push('/login'); };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <p className="mt-3 text-xs font-medium text-slate-500">Preparing LIFE-LINK...</p>
-        </div>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="min-h-screen bg-[#f6f9fc] flex items-center justify-center"><div className="text-center"><div className="mx-auto size-9 border-2 border-[#0067B8] border-t-transparent rounded-full animate-spin" /><p className="mt-4 text-sm font-medium text-slate-500">Preparing your workspace…</p></div></div>;
+  if (publicPaths.has(currentPath)) return <>{children}</>;
 
-  if (publicPaths.has(pathname)) return <>{children}</>;
+  const sectionLabel = navItems.find((item) => currentPath === item.href || currentPath.startsWith(`${item.href}/`))?.label ?? 'Workspace';
+  const organizationName = organization?.hospital?.name || organization?.bloodBank?.name || 'Authorized network member';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
-      <header className="sticky top-0 z-40 h-16 border-b border-slate-200 bg-white/95 backdrop-blur px-4 sm:px-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="md:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-50" aria-label="Toggle navigation">
-            {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </button>
+    <div className="min-h-screen bg-[#f6f9fc] text-slate-900 flex flex-col">
+      <header className="sticky top-0 z-40 h-[72px] border-b border-slate-200/80 bg-white/95 backdrop-blur px-4 sm:px-6 flex items-center justify-between">
+        <div className="flex items-center gap-4 min-w-0">
+          <button type="button" onClick={() => setMobileMenuOpen(true)} className="md:hidden inline-flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0067B8]/30" aria-label="Open navigation"><Menu aria-hidden="true" /></button>
           <BrandLogo href="/" />
-          <span className="hidden lg:block text-xs text-slate-400 border-l border-slate-200 pl-3">Emergency Medical Resource Network</span>
+          <div className="hidden lg:flex items-center gap-2 text-sm text-slate-400"><ChevronRight aria-hidden="true" /><span>{sectionLabel}</span></div>
         </div>
-
         <div className="flex items-center gap-2 sm:gap-4">
-          {organization && (
-            <div className="hidden lg:block text-right border-r border-slate-200 pr-4">
-              <div className="text-xs font-semibold text-slate-800">{organization.hospital?.name || organization.bloodBank?.name || 'Authorized Member'}</div>
-              <div className="text-[10px] text-slate-400">{organization.hospital ? 'Hospital' : organization.bloodBank ? 'Blood Bank' : 'Network Member'}</div>
-            </div>
-          )}
-          {user && <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold"><ShieldCheck className="w-3.5 h-3.5" />{user.role.replace(/_/g, ' ')}</div>}
-          <Link href="/notifications" className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800" aria-label="Notifications">
-            <Bell className="w-4 h-4" />
-            {unreadNotificationsCount > 0 && <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}</span>}
-          </Link>
-          <Link href="/profile" className="hidden md:block max-w-48 truncate text-xs text-slate-500 hover:text-blue-600">{user?.email}</Link>
-          <button onClick={handleSignOut} className="p-2 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50" title="Sign out"><LogOut className="w-4 h-4" /></button>
+          <div className="hidden xl:block text-right border-r border-slate-200 pr-4"><p className="text-sm font-semibold text-slate-800 truncate max-w-56">{organizationName}</p><p className="text-xs text-slate-500">{user ? roleLabels[user.role] : 'Secure workspace'}</p></div>
+          {user && <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[#0067B8]"><ShieldCheck aria-hidden="true" />{user.role.replace(/_/g, ' ')}</span>}
+          <Link href="/notifications" className="relative inline-flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0067B8]/30" aria-label={`Notifications${unreadNotificationsCount ? `, ${unreadNotificationsCount} unread` : ''}`}><Bell aria-hidden="true" />{unreadNotificationsCount > 0 && <span className="absolute right-1.5 top-1.5 min-w-4 h-4 rounded-full bg-red-600 px-1 text-center text-[9px] font-bold leading-4 text-white">{unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}</span>}</Link>
+          <Link href="/profile" className="hidden md:flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100"><span className="inline-flex size-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"><UserRound aria-hidden="true" /></span><span className="max-w-44 truncate">{user?.email}</span></Link>
+          <button type="button" onClick={handleSignOut} className="inline-flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30" aria-label="Sign out"><LogOut aria-hidden="true" /></button>
         </div>
       </header>
 
       <div className="flex flex-1">
-        <aside className="hidden md:flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
-          <p className="px-3 mb-2 text-[10px] uppercase tracking-wider font-bold text-slate-400">Workspace</p>
-          <nav className="space-y-1">
-            {navItems.map(item => {
-              const active = currentPath === item.href || currentPath.startsWith(item.href + '/');
-              return <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium ${active ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>{item.icon}{item.label}</Link>;
-            })}
+        <aside className="hidden md:flex w-64 shrink-0 flex-col border-r border-slate-200/80 bg-white px-3 py-5">
+          <div className="px-3 pb-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Operations center</p><p className="mt-1 text-xs text-slate-500">{roleLabels[user?.role ?? ''] ?? 'Secure workspace'}</p></div>
+          <nav aria-label="Primary navigation" className="flex flex-col gap-1">
+            {navItems.map((item) => { const active = currentPath === item.href || currentPath.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} aria-current={active ? 'page' : undefined} className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0067B8]/30 ${active ? 'bg-[#e8f3fb] text-[#0067B8]' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}>{item.icon}<span className="flex-1">{item.label}</span>{active && <span className="size-1.5 rounded-full bg-[#0067B8]" aria-hidden="true" />}</Link>; })}
           </nav>
-          <div className="mt-auto pt-4 border-t border-slate-100">
-            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700"><span className="h-2 w-2 rounded-full bg-green-500" />Network active</div>
-              <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Emergency coordination services are available.</p>
-            </div>
-          </div>
+          <div className="mt-auto border-t border-slate-100 pt-4"><div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3"><div className="flex items-center gap-2 text-xs font-bold text-emerald-800"><span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />Network operational</div><p className="mt-1.5 text-[11px] leading-relaxed text-emerald-900/65">Coordination services are available.</p></div></div>
         </aside>
 
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-900/20 md:hidden" onClick={() => setMobileMenuOpen(false)}>
-            <div className="w-72 h-full bg-white border-r border-slate-200 p-4" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
-                <span className="font-bold text-sm text-slate-900">Workspace</span>
-                <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-500"><X className="w-5 h-5" /></button>
-              </div>
-              <nav className="space-y-1">
-                {navItems.map(item => <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-600 hover:bg-slate-50">{item.icon}{item.label}</Link>)}
-              </nav>
-            </div>
-          </div>
-        )}
+        {mobileMenuOpen && <div className="fixed inset-0 z-50 bg-slate-950/30 md:hidden" onClick={() => setMobileMenuOpen(false)}><aside role="dialog" aria-modal="true" aria-label="Navigation menu" className="flex h-full w-[min(86vw,20rem)] flex-col bg-white px-4 py-5 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between border-b border-slate-100 pb-5"><BrandLogo href="/" compact /><button type="button" onClick={() => setMobileMenuOpen(false)} className="inline-flex size-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Close navigation"><X aria-hidden="true" /></button></div><p className="px-2 pb-3 pt-5 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Operations center</p><nav aria-label="Mobile navigation" className="flex flex-col gap-1">{navItems.map((item) => { const active = currentPath === item.href || currentPath.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} aria-current={active ? 'page' : undefined} className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold ${active ? 'bg-[#e8f3fb] text-[#0067B8]' : 'text-slate-600 hover:bg-slate-50'}`}>{item.icon}{item.label}</Link>; })}</nav></aside></div>}
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="max-w-7xl mx-auto">{children}</div>
-        </main>
+        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8"><div className="mx-auto max-w-7xl">{children}</div></main>
       </div>
     </div>
   );
