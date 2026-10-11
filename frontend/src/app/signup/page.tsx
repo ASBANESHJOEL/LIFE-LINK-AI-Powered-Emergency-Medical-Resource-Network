@@ -85,7 +85,7 @@ function SignupContent() {
   // State: Existing user account detected
   if (existingAccount) {
     const isSameRole = Boolean(existingAccount.existingRole) && existingAccount.existingRole === role;
-    const existingRoleFormatted = formatRoleName(existingAccount.existingRole);
+    const existingRoleFormatted = formatRoleName(existingAccount.existingRole ?? undefined);
 
     return (
       <div className="lifelink-page min-h-screen flex items-center justify-center px-4 py-10">
