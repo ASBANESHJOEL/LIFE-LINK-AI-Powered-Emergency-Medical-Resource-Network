@@ -1,3 +1,5 @@
+> **Current implementation note (2026-10-11):** The active FastAPI `/predict` implementation and `ml/scripts/load_production_model.py` use Logistic Regression V1. The XGBoost/HEM tables and examples below describe historical research experiments and should not be read as the current production model contract. Experimental Donor Intelligence V2 is documented in [NEURAL_RANKER_V2.md](NEURAL_RANKER_V2.md); it uses synthetic training labels, is disabled unless configured, and is not production-validated.
+
 # LIFE-LINK ML: Donor Dispatch Response Prediction Pipeline
 
 Production-ready machine learning pipeline for predicting whether a dispatched blood donor will respond positively (`ACCEPTED` / `COMPLETED`) to an emergency blood request in the **LIFE-LINK** emergency medical resource network.

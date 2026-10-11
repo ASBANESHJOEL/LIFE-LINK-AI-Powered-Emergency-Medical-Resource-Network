@@ -26,6 +26,8 @@ jobs:
         with:
           python-version: "3.11"
       - run: python -m pip install -r ml/requirements.txt
+      - run: python ml/scripts/train_neural_ranker.py
+      - run: python ml/scripts/evaluate_neural_ranker.py
       - run: pytest -q ml/tests/test_neural_ranker.py ml/tests/test_neural_ranker_api.py ml/tests/test_api.py
       - uses: actions/setup-node@v4
         with:
