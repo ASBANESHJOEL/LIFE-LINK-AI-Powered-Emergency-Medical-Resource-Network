@@ -68,7 +68,12 @@ const corsOptions = {
     const isProd = process.env.NODE_ENV === 'production';
 
     if (isProd) {
-      if (allowed.has(origin)) {
+      // Allow only this project's generated Vercel preview hostnames; do not
+      // allow every *.vercel.app origin to call the production API.
+      const isProjectPreviewOrigin =
+        /^https:\/\/life-link-ai-powered-emergency-medical-resource-netw-[a-z0-9-]+\.vercel\.app$/.test(origin);
+
+      if (allowed.has(origin) || isProjectPreviewOrigin) {
         return callback(null, true);
       }
       const err = new Error(`CORS blocked for origin: ${origin}`);
