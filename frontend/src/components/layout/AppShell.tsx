@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || user?.role !== 'DONOR') return;
     let mounted = true;
     const loadUnread = async () => {
       try {
@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     loadUnread();
     const interval = setInterval(loadUnread, 30000);
     return () => { mounted = false; clearInterval(interval); };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.role]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -129,10 +129,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           )}
           {user && <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[11px] font-semibold"><ShieldCheck className="w-3.5 h-3.5" />{user.role.replace(/_/g, ' ')}</div>}
-          <Link href="/notifications" className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800" aria-label="Notifications">
+          {user?.role === 'DONOR' && <Link href="/notifications" className="relative p-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-800" aria-label="Notifications">
             <Bell className="w-4 h-4" />
             {unreadNotificationsCount > 0 && <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center">{unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}</span>}
-          </Link>
+          </Link>}
           <Link href="/profile" className="hidden md:block max-w-48 truncate text-xs text-slate-500 hover:text-blue-600">{user?.email}</Link>
           <button onClick={handleSignOut} className="p-2 rounded-lg text-slate-500 hover:text-red-600 hover:bg-red-50" title="Sign out"><LogOut className="w-4 h-4" /></button>
         </div>
