@@ -5,11 +5,12 @@ Medical eligibility and authorization remain upstream deterministic responsibili
 """
 import json
 import os
+import secrets
 import sys
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -46,11 +47,9 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(
-    title="LIFE-LINK ML Donor Intelligence API",
+app = FastAPI(title="LIFE-LINK ML Donor Intelligence API",
     description="V1 response probability and experimental V2 ranking. Medical eligibility is enforced upstream.",
-    version="2.0.0", lifespan=lifespan, docs_url="/docs", redoc_url="/redoc",
-)
+    version="2.0.0", lifespan=lifespan, docs_url="/docs", redoc_url="/redoc")
 allowed_origins = [x.strip().rstrip("/") for x in os.getenv("ML_ALLOWED_ORIGINS", "").split(",") if x.strip()]
 if allowed_origins:
     app.add_middleware(CORSMiddleware, allow_origins=allowed_origins, allow_credentials=False,
@@ -110,15 +109,14 @@ class RankedCandidate(BaseModel):
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["System"])
 def health_check():
+    ranker_path = os.getenv("LIFE_LINK_RANKER_MODEL_PATH", os.path.join(ml_dir, "models", "donor_ranker_mlp_v2.joblib"))
     if production_model is None:
         try:
             load_inference_model()
         except RuntimeError:
             return {"status": "degraded", "service": "LIFE-LINK ML Donor Intelligence",
                     "model_loaded": False, "active_model": PRODUCTION_MODEL_NAME,
-                    "ranker_available": os.path.isfile(os.getenv("LIFE_LINK_RANKER_MODEL_PATH", os.path.join(ml_dir, "models", "donor_ranker_mlp_v2.joblib"))),
-                    "feature_count": len(FEATURE_NAMES), "version": "2.0.0"}
-    ranker_path = os.getenv("LIFE_LINK_RANKER_MODEL_PATH", os.path.join(ml_dir, "models", "donor_ranker_mlp_v2.joblib"))
+                    "ranker_available": os.path.isfile(ranker_path), "feature_count": len(FEATURE_NAMES), "version": "2.0.0"}
     return {"status": "ok", "service": "LIFE-LINK ML Donor Intelligence",
             "model_loaded": production_model is not None, "active_model": PRODUCTION_MODEL_NAME,
             "ranker_available": os.path.isfile(ranker_path), "ranker_model": RANKER_MODEL_NAME,
@@ -164,8 +162,14 @@ def predict_donor_response_endpoint(payload: DonorDispatchFeatures):
 
 
 @app.post("/rank", response_model=List[RankedCandidate], status_code=status.HTTP_200_OK, tags=["V2 Experimental Ranking"])
-def rank_donors_endpoint(payload: RankingRequest):
-    """Rank caller-authorized candidates; backend must enforce tenant and dispatch authorization."""
+def rank_donors_endpoint(payload: RankingRequest, authorization: Optional[str] = Header(default=None)):
+    """Rank caller-authorized candidates. A server-side key is mandatory; backend still enforces authorization."""
+    expected_key = os.getenv("ML_RANKING_API_KEY", "")
+    if not expected_key:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="V2 ranking is disabled until ML_RANKING_API_KEY is configured")
+    supplied_key = authorization.removeprefix("Bearer ").strip() if authorization else ""
+    if not secrets.compare_digest(supplied_key, expected_key):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid ML ranking credentials")
     candidates = []
     for candidate in payload.candidates:
         features = candidate.features.model_dump()

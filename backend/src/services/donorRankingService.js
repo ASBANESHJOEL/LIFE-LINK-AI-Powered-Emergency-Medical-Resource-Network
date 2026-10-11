@@ -1,253 +1,125 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js';
-import { findEligibleDonors } from './donorEligibilityService.js';
 
-const URGENCY_LEVEL = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
-const UNIVERSAL_DONOR_GROUP = 'O_NEGATIVE';
-const DEFAULT_BATCH_SIZE = 5;
-const INFERENCE_CONCURRENCY = 8;
+const TERMINAL_DISPATCH_STATUSES = new Set(['ACCEPTED', 'COMPLETED', 'DECLINED', 'NO_RESPONSE', 'CANCELLED']);
+const POSITIVE_DISPATCH_STATUSES = new Set(['ACCEPTED', 'COMPLETED']);
+const URGENCY_LEVEL = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
 
-function getMlApiUrl() {
-  return (process.env.ML_API_URL || '').replace(/\/$/, '');
+export function calculateDistanceKm(lat1, lon1, lat2, lon2) {
+  const values = [lat1, lon1, lat2, lon2].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  const [aLat, aLon, bLat, bLon] = values;
+  if (Math.abs(aLat) > 90 || Math.abs(bLat) > 90 || Math.abs(aLon) > 180 || Math.abs(bLon) > 180) return null;
+  const radians = (degrees) => degrees * Math.PI / 180;
+  const dLat = radians(bLat - aLat);
+  const dLon = radians(bLon - aLon);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(aLat)) * Math.cos(radians(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
 }
 
-function daysSince(dateValue) {
-  if (!dateValue) return 365;
-  const date = new Date(`${dateValue}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return 365;
-  return Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000));
-}
-
-function isUniversalDonor({ bloodGroup, componentType }) {
-  return componentType === 'RED_BLOOD_CELLS' && bloodGroup === UNIVERSAL_DONOR_GROUP;
-}
-
-function buildFeatureVector({ donor, request, historyCount, positiveResponses }) {
-  const now = new Date();
-  const dispatchHour = now.getUTCHours();
-  const dispatchDayOfWeek = now.getUTCDay();
-  const isWeekend = dispatchDayOfWeek === 0 || dispatchDayOfWeek === 6;
-  const isNightDispatch = dispatchHour < 6 || dispatchHour >= 22;
-  const isBusinessHours = dispatchHour >= 9 && dispatchHour < 18 && !isWeekend;
-
+export function buildRankingFeatures({ donor, request, historyRows, distanceKm }) {
+  const history = (historyRows || []).filter((row) => TERMINAL_DISPATCH_STATUSES.has(row.status));
+  const positives = history.filter((row) => POSITIVE_DISPATCH_STATUSES.has(row.status)).length;
+  const dispatchDate = new Date(request.created_at);
+  const lastDonation = donor.lastDonationDate ? new Date(donor.lastDonationDate) : null;
+  const daysSinceDonation = lastDonation && Number.isFinite(lastDonation.getTime())
+    ? Math.max(0, (dispatchDate.getTime() - lastDonation.getTime()) / 86400000)
+    : 3650;
+  const hour = dispatchDate.getUTCHours();
+  const day = (dispatchDate.getUTCDay() + 6) % 7;
+  const urgency = URGENCY_LEVEL[String(request.urgency || '').toUpperCase()];
+  if (!Number.isFinite(dispatchDate.getTime()) || urgency === undefined) {
+    throw new Error('Request is missing a valid created_at timestamp or urgency value');
+  }
+  const donorGroup = String(donor.bloodGroup || '').toUpperCase();
   return {
-    is_exact_blood_match: Number(donor.bloodGroup === request.blood_group),
+    is_exact_blood_match: Number(donorGroup === String(request.blood_group || '').toUpperCase()),
     is_blood_compatible: 1,
-    is_universal_donor: Number(isUniversalDonor({ bloodGroup: donor.bloodGroup, componentType: request.resource_type })),
-    donor_is_verified: Number(donor.verified),
+    is_universal_donor: Number(donorGroup === 'O_NEGATIVE'),
+    donor_is_verified: Number(donor.verified === true),
     donor_is_eligible: Number(donor.eligibilityStatus === 'ELIGIBLE'),
     donor_is_available: Number(donor.availabilityStatus === 'AVAILABLE'),
-    donor_response_rate: historyCount > 0 ? positiveResponses / historyCount : 0,
-    donor_history_count: historyCount,
-    donor_positive_responses: positiveResponses,
-    days_since_last_donation: daysSince(donor.lastDonationDate),
-    dispatch_hour: dispatchHour,
-    dispatch_day_of_week: dispatchDayOfWeek,
-    is_weekend: Number(isWeekend),
-    is_night_dispatch: Number(isNightDispatch),
-    is_business_hours: Number(isBusinessHours),
+    donor_response_rate: (positives + 2) / (history.length + 4),
+    donor_history_count: history.length,
+    donor_positive_responses: positives,
+    days_since_last_donation: daysSinceDonation,
+    dispatch_hour: hour,
+    dispatch_day_of_week: day,
+    is_weekend: Number(day >= 5),
+    is_night_dispatch: Number(hour >= 22 || hour < 6),
+    is_business_hours: Number(day < 5 && hour >= 9 && hour < 18),
     requested_quantity: Number(request.quantity),
-    urgency_level: URGENCY_LEVEL[request.urgency] ?? 1,
-    is_resource_blood: 1
+    urgency_level: urgency,
+    is_resource_blood: Number(['WHOLE_BLOOD', 'RED_BLOOD_CELLS'].includes(request.resource_type)),
+    distance_km: distanceKm,
   };
 }
 
-async function getDonorHistory(donorIds, requestId) {
-  if (!donorIds.length) return new Map();
+export async function rankEligibleDonors({ request, donors }) {
+  if (process.env.ML_RANKING_ENABLED !== 'true') {
+    return { status: 'DISABLED', message: 'ML ranking is disabled; returning eligibility-filtered candidates.' };
+  }
+  const baseUrl = String(process.env.ML_API_URL || '').replace(/\/+$/, '');
+  const apiKey = process.env.ML_RANKING_API_KEY;
+  if (!baseUrl || !apiKey) {
+    return { status: 'UNAVAILABLE', message: 'ML ranking configuration is incomplete; returning eligibility-filtered candidates.' };
+  }
+  if (!donors.length) return { status: 'RANKED', model: 'donor_ranker_mlp_v2', donors: [] };
+  if (!request.created_at || request.hospital_latitude == null || request.hospital_longitude == null) {
+    return { status: 'UNAVAILABLE', message: 'Request location or timestamp is unavailable; returning eligibility-filtered candidates.' };
+  }
+  const located = donors.map((donor) => ({
+    donor,
+    distanceKm: calculateDistanceKm(request.hospital_latitude, request.hospital_longitude,
+      donor.currentLatitude, donor.currentLongitude),
+  }));
+  if (located.some((item) => item.distanceKm == null)) {
+    return { status: 'UNAVAILABLE', message: 'One or more candidates lack usable location data; returning eligibility-filtered candidates.' };
+  }
 
-  const { data, error } = await supabaseAdmin
+  const donorIds = donors.map((donor) => donor.donorId);
+  const { data: historyRows, error: historyError } = await supabaseAdmin
     .from('donor_dispatches')
-    .select('donor_id, status')
+    .select('donor_id, status, created_at')
     .in('donor_id', donorIds)
-    .neq('request_id', requestId);
-
-  if (error) {
-    const err = new Error(error.message || 'Failed to retrieve donor response history');
-    err.code = error.code;
-    throw err;
+    .lt('created_at', request.created_at)
+    .limit(10000);
+  if (historyError) {
+    return { status: 'UNAVAILABLE', message: 'Historical dispatch features could not be loaded; returning eligibility-filtered candidates.' };
+  }
+  const byDonor = new Map(donorIds.map((id) => [id, []]));
+  for (const row of historyRows || []) {
+    if (byDonor.has(row.donor_id)) byDonor.get(row.donor_id).push(row);
   }
 
-  const history = new Map();
-  for (const row of data || []) {
-    const current = history.get(row.donor_id) || { historyCount: 0, positiveResponses: 0 };
-    current.historyCount += 1;
-    if (['RESPONDED', 'ACCEPTED', 'COMPLETED'].includes(row.status)) current.positiveResponses += 1;
-    history.set(row.donor_id, current);
-  }
-  return history;
-}
-
-const ML_FALLBACK_CODES = new Set(['ML_NOT_CONFIGURED', 'ML_TIMEOUT', 'ML_INFERENCE_FAILED']);
-
-async function predict(features) {
-  const mlApiUrl = getMlApiUrl();
-  if (!mlApiUrl) {
-    const err = new Error('ML_API_URL is not configured');
-    err.code = 'ML_NOT_CONFIGURED';
-    throw err;
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
+  const candidates = located.map(({ donor, distanceKm }) => ({
+    donor_id: donor.donorId,
+    distance_km: Number(distanceKm.toFixed(3)),
+    features: buildRankingFeatures({ donor, request, historyRows: byDonor.get(donor.donorId), distanceKm }),
+  }));
   try {
-    const response = await fetch(`${mlApiUrl}/predict`, {
+    const response = await fetch(`${baseUrl}/rank`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(features),
-      signal: controller.signal
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ candidates }),
+      signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) {
-      const err = new Error(`ML inference returned HTTP ${response.status}`);
-      err.code = 'ML_INFERENCE_FAILED';
-      throw err;
+      return { status: 'UNAVAILABLE', message: `ML ranking service returned HTTP ${response.status}; returning eligibility-filtered candidates.` };
     }
-    const data = await response.json();
-    const isValidObject = data !== null && typeof data === 'object' && !Array.isArray(data);
-    const hasValidProbability = isValidObject && Number.isFinite(data.probability);
-    const hasValidPrediction = isValidObject && data.prediction !== undefined && data.prediction !== null && (data.prediction === 0 || data.prediction === 1 || Number.isFinite(data.prediction));
-
-    if (!isValidObject || !hasValidProbability || !hasValidPrediction) {
-      const err = new Error('ML inference returned malformed payload');
-      err.code = 'ML_INFERENCE_FAILED';
-      throw err;
+    const payload = await response.json();
+    if (!Array.isArray(payload)) throw new Error('Unexpected ML ranking response');
+    const rankedIds = new Set(payload.map((item) => item.donor_id));
+    if (payload.some((item) => !rankedIds.has(item.donor_id) || !Number.isInteger(item.rank) || !Number.isFinite(item.score))) {
+      throw new Error('Invalid ML ranking item');
     }
-    return data;
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      const err = new Error('ML inference timed out');
-      err.code = 'ML_TIMEOUT';
-      throw err;
-    }
-    if (error.code === 'ML_NOT_CONFIGURED' || error.code === 'ML_TIMEOUT' || error.code === 'ML_INFERENCE_FAILED') {
-      throw error;
-    }
-    const err = new Error('ML inference request failed');
-    err.code = 'ML_INFERENCE_FAILED';
-    throw err;
-  } finally {
-    clearTimeout(timeout);
+    const donorById = new Map(donors.map((donor) => [donor.donorId, donor]));
+    const ranked = [...payload]
+      .sort((a, b) => a.rank - b.rank)
+      .filter((item) => donorById.has(item.donor_id))
+      .map((item) => ({ ...donorById.get(item.donor_id), ranking: { rank: item.rank, score: item.score } }));
+    // Any candidate filtered by the ML service is intentionally not reintroduced.
+    return { status: 'RANKED', model: 'donor_ranker_mlp_v2', donors: ranked };
+  } catch {
+    return { status: 'UNAVAILABLE', message: 'ML ranking request failed; returning eligibility-filtered candidates.' };
   }
-}
-
-async function mapWithConcurrency(items, worker, concurrency = INFERENCE_CONCURRENCY) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-
-  async function runWorker() {
-    while (true) {
-      const index = nextIndex++;
-      if (index >= items.length) return;
-      results[index] = await worker(items[index]);
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()));
-  return results;
-}
-
-function rankDonorsDeterministically(donors, history) {
-  const ranked = donors.map((donor) => {
-    const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
-    const responseRate = donorHistory.historyCount > 0
-      ? donorHistory.positiveResponses / donorHistory.historyCount
-      : 0;
-    const metrics = {
-      responseRate,
-      verified: donor.verified ? 1 : 0,
-      positiveResponses: donorHistory.positiveResponses,
-      daysSinceLastDonation: daysSince(donor.lastDonationDate),
-      donorId: donor.donorId
-    };
-
-    return {
-      ...donor,
-      responseProbability: Number(responseRate.toFixed(4)),
-      predictedResponse: responseRate >= 0.5 ? 1 : 0,
-      modelVersion: null,
-      _metrics: metrics
-    };
-  });
-
-  ranked.sort((a, b) => {
-    // 1. Higher historical response rate first
-    if (b._metrics.responseRate !== a._metrics.responseRate) {
-      return b._metrics.responseRate - a._metrics.responseRate;
-    }
-    // 2. Verified donor first
-    if (b._metrics.verified !== a._metrics.verified) {
-      return b._metrics.verified - a._metrics.verified;
-    }
-    // 3. Greater historical positive responses next
-    if (b._metrics.positiveResponses !== a._metrics.positiveResponses) {
-      return b._metrics.positiveResponses - a._metrics.positiveResponses;
-    }
-    // 4. Longer/valid donation-history signal as currently available
-    if (b._metrics.daysSinceLastDonation !== a._metrics.daysSinceLastDonation) {
-      return b._metrics.daysSinceLastDonation - a._metrics.daysSinceLastDonation;
-    }
-    // 5. Donor ID ascending as the final stable tie-breaker
-    return a.donorId.localeCompare(b.donorId);
-  });
-
-  for (const item of ranked) {
-    delete item._metrics;
-  }
-
-  return ranked;
-}
-
-export async function rankEligibleDonors({ request, limit = 500, batchSize = DEFAULT_BATCH_SIZE }) {
-  const donors = await findEligibleDonors({
-    requestId: request.id,
-    bloodGroup: request.blood_group,
-    componentType: request.resource_type,
-    limit
-  });
-
-  if (!donors.length) {
-    return { modelVersion: null, rankingSource: 'ML', candidateCount: 0, rankedDonors: [], nextBatch: [] };
-  }
-
-  const history = await getDonorHistory(donors.map((donor) => donor.donorId), request.id);
-
-  let ranked;
-  let rankingSource = 'ML';
-  let modelVersion = null;
-
-  try {
-    ranked = await mapWithConcurrency(donors, async (donor) => {
-      const donorHistory = history.get(donor.donorId) || { historyCount: 0, positiveResponses: 0 };
-      const features = buildFeatureVector({ donor, request, ...donorHistory });
-      const prediction = await predict(features);
-      return {
-        ...donor,
-        responseProbability: prediction.probability,
-        predictedResponse: prediction.prediction,
-        modelVersion: prediction.model_version
-      };
-    });
-
-    ranked.sort((a, b) => {
-      if (b.responseProbability !== a.responseProbability) return b.responseProbability - a.responseProbability;
-      return a.donorId.localeCompare(b.donorId);
-    });
-
-    modelVersion = ranked[0]?.modelVersion || null;
-  } catch (error) {
-    if (!ML_FALLBACK_CODES.has(error.code)) {
-      throw error;
-    }
-
-    rankingSource = 'DETERMINISTIC_FALLBACK';
-    modelVersion = null;
-    ranked = rankDonorsDeterministically(donors, history);
-  }
-
-  const safeBatchSize = Number.isInteger(batchSize) && batchSize > 0 ? Math.min(batchSize, 5) : DEFAULT_BATCH_SIZE;
-  return {
-    modelVersion,
-    rankingSource,
-    candidateCount: ranked.length,
-    rankedDonors: ranked,
-    nextBatch: ranked.slice(0, safeBatchSize)
-  };
 }
