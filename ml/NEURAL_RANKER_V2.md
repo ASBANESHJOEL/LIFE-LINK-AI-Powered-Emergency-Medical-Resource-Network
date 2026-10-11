@@ -8,7 +8,7 @@ V2 returns an uncalibrated ranking utility, not a probability. The FastAPI /rank
 
 ## Features
 
-V2 reuses the 18 V1 dispatch-time features and adds distance_km. The backend calculates distance from request and donor coordinates and derives historical response features only from dispatches created before the request timestamp. Direct donor identifiers and contact details are not sent to the model; donor_id is returned only as an opaque correlation value.
+V2 reuses the 18 V1 dispatch-time features and adds distance_km. The backend calculates distance from request and donor coordinates and derives historical response features only from dispatches created before the request timestamp. Direct donor contact details are not sent to the model; donor_id is returned only as an opaque correlation value.
 
 ## Train and evaluate
 

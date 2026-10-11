@@ -5,7 +5,9 @@ const POSITIVE_DISPATCH_STATUSES = new Set(['ACCEPTED', 'COMPLETED']);
 const URGENCY_LEVEL = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
 
 export function calculateDistanceKm(lat1, lon1, lat2, lon2) {
-  const values = [lat1, lon1, lat2, lon2].map(Number);
+  const raw = [lat1, lon1, lat2, lon2];
+  if (raw.some((value) => value === null || value === undefined || String(value).trim() === '')) return null;
+  const values = raw.map(Number);
   if (!values.every(Number.isFinite)) return null;
   const [aLat, aLon, bLat, bLon] = values;
   if (Math.abs(aLat) > 90 || Math.abs(bLat) > 90 || Math.abs(aLon) > 180 || Math.abs(bLon) > 180) return null;
@@ -77,25 +79,32 @@ export async function rankEligibleDonors({ request, donors }) {
   }
 
   const donorIds = donors.map((donor) => donor.donorId);
-  const { data: historyRows, error: historyError } = await supabaseAdmin
-    .from('donor_dispatches')
-    .select('donor_id, status, created_at')
-    .in('donor_id', donorIds)
-    .lt('created_at', request.created_at)
-    .limit(10000);
-  if (historyError) {
-    return { status: 'UNAVAILABLE', message: 'Historical dispatch features could not be loaded; returning eligibility-filtered candidates.' };
-  }
-  const byDonor = new Map(donorIds.map((id) => [id, []]));
-  for (const row of historyRows || []) {
-    if (byDonor.has(row.donor_id)) byDonor.get(row.donor_id).push(row);
+  let historyRows;
+  try {
+    const result = await supabaseAdmin
+      .from('donor_dispatches')
+      .select('donor_id, status, created_at')
+      .in('donor_id', donorIds)
+      .lt('created_at', request.created_at)
+      .limit(10000);
+    if (result.error) {
+      return { status: 'UNAVAILABLE', message: 'Historical dispatch features could not be loaded; returning eligibility-filtered candidates.' };
+    }
+    historyRows = result.data || [];
+  } catch {
+    return { status: 'UNAVAILABLE', message: 'Historical dispatch lookup failed; returning eligibility-filtered candidates.' };
   }
 
+  const byDonor = new Map(donorIds.map((id) => [id, []]));
+  for (const row of historyRows) {
+    if (byDonor.has(row.donor_id)) byDonor.get(row.donor_id).push(row);
+  }
   const candidates = located.map(({ donor, distanceKm }) => ({
     donor_id: donor.donorId,
     distance_km: Number(distanceKm.toFixed(3)),
     features: buildRankingFeatures({ donor, request, historyRows: byDonor.get(donor.donorId), distanceKm }),
   }));
+
   try {
     const response = await fetch(`${baseUrl}/rank`, {
       method: 'POST',
@@ -108,16 +117,19 @@ export async function rankEligibleDonors({ request, donors }) {
     }
     const payload = await response.json();
     if (!Array.isArray(payload)) throw new Error('Unexpected ML ranking response');
-    const rankedIds = new Set(payload.map((item) => item.donor_id));
-    if (payload.some((item) => !rankedIds.has(item.donor_id) || !Number.isInteger(item.rank) || !Number.isFinite(item.score))) {
-      throw new Error('Invalid ML ranking item');
+    const allowedIds = new Set(donorIds);
+    const seenIds = new Set();
+    for (const item of payload) {
+      if (!item || !allowedIds.has(item.donor_id) || seenIds.has(item.donor_id)
+        || !Number.isInteger(item.rank) || item.rank < 1 || !Number.isFinite(item.score)) {
+        throw new Error('Invalid ML ranking item');
+      }
+      seenIds.add(item.donor_id);
     }
     const donorById = new Map(donors.map((donor) => [donor.donorId, donor]));
     const ranked = [...payload]
       .sort((a, b) => a.rank - b.rank)
-      .filter((item) => donorById.has(item.donor_id))
       .map((item) => ({ ...donorById.get(item.donor_id), ranking: { rank: item.rank, score: item.score } }));
-    // Any candidate filtered by the ML service is intentionally not reintroduced.
     return { status: 'RANKED', model: 'donor_ranker_mlp_v2', donors: ranked };
   } catch {
     return { status: 'UNAVAILABLE', message: 'ML ranking request failed; returning eligibility-filtered candidates.' };
