@@ -42,3 +42,7 @@ ml/data/processed/*.parquet
 backend/local-test/
 backend/supabase/
 .supabase/
+
+# Generated experimental ML artifacts (train locally; deploy explicitly after review)
+ml/models/donor_ranker_mlp_v2.joblib
+ml/models/donor_ranker_mlp_v2.metadata.json
