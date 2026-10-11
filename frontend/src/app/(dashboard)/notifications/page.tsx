@@ -4,11 +4,13 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Bell, Check, CheckCheck, RefreshCw, ExternalLink, ShieldCheck, Mail, MessageSquare } from 'lucide-react';
 import { api } from '../../../lib/api/client';
+import { useAuth } from '../../../lib/supabase/auth-context';
 import { AppNotification } from '../../../types/notifications';
 import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
 
 export default function NotificationsPage() {
+  const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadOnly, setUnreadOnly] = useState(false);
@@ -29,8 +31,12 @@ export default function NotificationsPage() {
   };
 
   useEffect(() => {
+    if (user?.role !== 'DONOR') {
+      setLoading(false);
+      return;
+    }
     fetchNotifications();
-  }, [unreadOnly]);
+  }, [unreadOnly, user?.role]);
 
   const handleMarkRead = async (id: string) => {
     setMarkingId(id);
@@ -45,6 +51,20 @@ export default function NotificationsPage() {
       setMarkingId(null);
     }
   };
+
+  if (user?.role !== 'DONOR') {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card className="border-slate-800 bg-slate-900/80">
+          <CardContent className="p-8 text-center">
+            <Bell className="w-8 h-8 text-slate-400 mx-auto mb-3" />
+            <h1 className="text-lg font-bold text-white">Notifications unavailable</h1>
+            <p className="text-sm text-slate-400 mt-2">The current notification feed is available to donor accounts only.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
