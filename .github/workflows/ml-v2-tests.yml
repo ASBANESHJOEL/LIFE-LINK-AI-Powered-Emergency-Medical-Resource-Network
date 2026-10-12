@@ -7,7 +7,10 @@ on:
       - "ml/**"
       - "backend/src/services/donorRankingService.js"
       - "backend/src/routes/donorEligibilityRoutes.js"
-      - "backend/test/donorRankingService.test.js"
+      - "backend/src/routes/donorRankingRoutes.js"
+      - "backend/test/**"
+      - "backend/package.json"
+      - "backend/package-lock.json"
       - "backend/.env.example"
       - ".github/workflows/ml-v2-tests.yml"
   pull_request:
@@ -15,9 +18,25 @@ on:
       - "ml/**"
       - "backend/src/services/donorRankingService.js"
       - "backend/src/routes/donorEligibilityRoutes.js"
-      - "backend/test/donorRankingService.test.js"
+      - "backend/src/routes/donorRankingRoutes.js"
+      - "backend/test/**"
+      - "backend/package.json"
+      - "backend/package-lock.json"
 
 jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci --prefix backend
+      - run: npm --prefix backend test
+
   ml-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -30,8 +49,3 @@ jobs:
       - run: python ml/scripts/train_neural_ranker.py
       - run: python ml/scripts/evaluate_neural_ranker.py
       - run: pytest -q ml/tests/test_neural_ranker.py ml/tests/test_neural_ranker_api.py ml/tests/test_api.py
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci --prefix backend
-      - run: npm --prefix backend test -- ./test/donorRankingService.test.js ./test/donor-eligibility.test.js
