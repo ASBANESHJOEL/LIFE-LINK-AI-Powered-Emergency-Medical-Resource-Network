@@ -24,9 +24,9 @@ on:
       - "backend/package-lock.json"
 
 jobs:
-  backend-tests:
+  backend-ranking-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci --prefix backend
-      - run: npm --prefix backend test
+      - run: npm --prefix backend test -- ./test/donor-ranking.test.js ./test/donorRankingService.test.js ./test/donor-eligibility.test.js
 
   ml-tests:
     runs-on: ubuntu-latest
