@@ -1,0 +1,25 @@
+name: LIFE-LINK Postman API Smoke Tests
+
+on:
+  push:
+    branches: [automation]
+    paths:
+      - "tests/postman/**"
+      - "ml/api/**"
+      - "ml/scripts/**"
+      - ".github/workflows/postman-api-smoke.yml"
+  workflow_dispatch:
+
+jobs:
+  ml-api-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run Postman collection through Newman
+        run: |
+          npm install --global newman
+          newman run tests/postman/life-link-ml-api.postman_collection.json --reporters cli
