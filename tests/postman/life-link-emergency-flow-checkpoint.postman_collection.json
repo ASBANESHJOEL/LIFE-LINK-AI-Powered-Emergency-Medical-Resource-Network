@@ -41,11 +41,6 @@
       "type": "string"
     },
     {
-      "key": "requestId",
-      "value": "",
-      "type": "string"
-    },
-    {
       "key": "dispatchId1",
       "value": "",
       "type": "string"
@@ -57,6 +52,16 @@
     },
     {
       "key": "dispatchId3",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "requestIdA",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "requestIdB",
       "value": "",
       "type": "string"
     }
@@ -82,7 +87,7 @@
             "url": "{{baseUrl}}/api/requests",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"blood_group\": \"O_POSITIVE\",\n  \"quantity\": 1,\n  \"resource_type\": \"WHOLE_BLOOD\",\n  \"urgency\": \"CRITICAL\",\n  \"hospital_latitude\": \"{{hospitalLatitude}}\",\n  \"hospital_longitude\": \"{{hospitalLongitude}}\"\n}",
+              "raw": "{\n  \"blood_group\": \"O_POSITIVE\",\n  \"quantity\": 1,\n  \"resource_type\": \"WHOLE_BLOOD\",\n  \"urgency\": \"CRITICAL\",\n  \"hospital_latitude\": {{hospitalLatitude}},\n  \"hospital_longitude\": {{hospitalLongitude}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -99,7 +104,7 @@
                   "pm.test('request creation returns 201', () => pm.response.to.have.status(201));",
                   "const body = pm.response.json();",
                   "pm.expect(body.request && body.request.id).to.exist;",
-                  "pm.collectionVariables.set('requestId', body.request.id);",
+                  "pm.collectionVariables.set('requestIdA', body.request.id);",
                   "pm.test('creation does not falsely claim inventory is resolved', () => pm.expect(body.resolution.status).to.eql('PENDING'));"
                 ]
               }
@@ -116,7 +121,7 @@
                 "value": "Bearer {{hospitalToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/requests/{{requestId}}/resolve/inventory"
+            "url": "{{baseUrl}}/api/requests/{{requestIdA}}/resolve/inventory"
           },
           "event": [
             {
@@ -137,7 +142,7 @@
     },
     {
       "name": "02 - Scenario B - Insufficient inventory and donor tracking (fixture-driven)",
-      "description": "Run only with a synthetic request/inventory fixture whose requestId is set in the collection variable. Donor tokens must correspond to the dispatches returned by next-batch.",
+      "description": "Fixture-driven: set requestIdB to a separate synthetic OPEN/PARTIALLY_FULFILLED request whose matching inventory has already been resolved and whose remaining quantity is positive. Use dedicated synthetic donor tokens.",
       "item": [
         {
           "name": "Get eligible donors",
@@ -149,7 +154,7 @@
                 "value": "Bearer {{hospitalToken}}"
               }
             ],
-            "url": "{{baseUrl}}/api/requests/{{requestId}}/eligible-donors"
+            "url": "{{baseUrl}}/api/requests/{{requestIdB}}/eligible-donors"
           },
           "event": [
             {
@@ -180,7 +185,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/requests/{{requestId}}/donor-dispatches/next-batch",
+            "url": "{{baseUrl}}/api/requests/{{requestIdB}}/donor-dispatches/next-batch",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"batchSize\": 3\n}",
@@ -398,7 +403,7 @@
     },
     {
       "name": "03 - Scenario C - All donors decline (fixture-driven)",
-      "description": "Run with at least 3 synthetic eligible donors and an insufficient-inventory request. Use a distinct donor token for each dispatch. After exhausting batches, explicitly call peer-bank resolution; automatic fallback is not yet verified.",
+      "description": "Fixture-driven: set requestIdB to a separate synthetic OPEN/PARTIALLY_FULFILLED request with insufficient matching inventory and at least three eligible synthetic donors. Populate dispatchId1..3 from the created batch before running the decline requests. Automatic peer-bank fallback is not yet verified.",
       "item": [
         {
           "name": "Donor 1 declines",
@@ -525,7 +530,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/requests/{{requestId}}/donor-dispatches/next-batch",
+            "url": "{{baseUrl}}/api/requests/{{requestIdB}}/donor-dispatches/next-batch",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"batchSize\": 3\n}",
@@ -565,7 +570,7 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{baseUrl}}/api/requests/{{requestId}}/resolve/peer-banks",
+            "url": "{{baseUrl}}/api/requests/{{requestIdB}}/resolve/peer-banks",
             "body": {
               "mode": "raw",
               "raw": "{}",
