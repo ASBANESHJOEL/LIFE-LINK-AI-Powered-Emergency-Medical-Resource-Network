@@ -1,0 +1,60 @@
+{
+  "info": {
+    "_postman_id": "6a482b1e-5b45-45de-b4b0-4eb067769f7b",
+    "name": "LIFE-LINK ML API CI Smoke Tests",
+    "description": "Read-only deployed ML API checks. Prediction payload is synthetic only; never send donor-identifiable data.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "mlBaseUrl", "value": "https://life-link-ml-api.onrender.com" }
+  ],
+  "item": [
+    {
+      "name": "01 - Health",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('health returns HTTP 200', () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.test('health payload reports healthy status', () => pm.expect(body.status).to.eql('ok'));",
+        "pm.test('health response is JSON', () => pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/json'));",
+        "pm.test('response under 15 seconds', () => pm.expect(pm.response.responseTime).to.be.below(15000));"
+      ] } }],
+      "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{mlBaseUrl}}/health" }
+    },
+    {
+      "name": "02 - Feature Schema",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('features returns HTTP 200', () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.test('feature schema declares 18 features', () => { const features = body.features || body; pm.expect(features).to.be.an('array'); pm.expect(features).to.have.length(18); });",
+        "pm.test('response under 15 seconds', () => pm.expect(pm.response.responseTime).to.be.below(15000));"
+      ] } }],
+      "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{mlBaseUrl}}/features" }
+    },
+    {
+      "name": "03 - Model Metadata",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('metadata returns HTTP 200', () => pm.response.to.have.status(200));",
+        "pm.test('metadata is valid JSON object', () => { const body = pm.response.json(); pm.expect(body).to.be.an('object'); });",
+        "pm.test('response under 15 seconds', () => pm.expect(pm.response.responseTime).to.be.below(15000));"
+      ] } }],
+      "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{mlBaseUrl}}/metadata" }
+    },
+    {
+      "name": "04 - Synthetic Prediction",
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('prediction returns HTTP 200', () => pm.response.to.have.status(200));",
+        "const body = pm.response.json();",
+        "pm.test('prediction is binary class 0 or 1', () => pm.expect([0, 1]).to.include(body.prediction));",
+        "pm.test('probability is a finite number in [0,1]', () => { pm.expect(body.probability).to.be.a('number'); pm.expect(body.probability).to.be.at.least(0); pm.expect(body.probability).to.be.at.most(1); });",
+        "pm.test('model identifier is present', () => pm.expect(body.model).to.be.a('string').and.not.empty);",
+        "pm.test('response under 15 seconds', () => pm.expect(pm.response.responseTime).to.be.below(15000));"
+      ] } }],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+        "body": { "mode": "raw", "raw": "{\n  \"is_exact_blood_match\": 1,\n  \"is_blood_compatible\": 1,\n  \"is_universal_donor\": 0,\n  \"donor_is_verified\": 1,\n  \"donor_is_eligible\": 1,\n  \"donor_is_available\": 1,\n  \"donor_response_rate\": 0.85,\n  \"donor_history_count\": 12,\n  \"donor_positive_responses\": 10,\n  \"days_since_last_donation\": 110,\n  \"dispatch_hour\": 14,\n  \"dispatch_day_of_week\": 2,\n  \"is_weekend\": 0,\n  \"is_night_dispatch\": 0,\n  \"is_business_hours\": 1,\n  \"requested_quantity\": 2,\n  \"urgency_level\": 3,\n  \"is_resource_blood\": 1\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{mlBaseUrl}}/predict"
+      }
+    }
+  ]
+}
