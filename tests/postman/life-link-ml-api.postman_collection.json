@@ -25,7 +25,7 @@
       "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
         "pm.test('features returns HTTP 200', () => pm.response.to.have.status(200));",
         "const body = pm.response.json();",
-        "pm.test('feature schema declares 18 features', () => { const features = body.features || body; pm.expect(features).to.be.an('array'); pm.expect(features).to.have.length(18); });",
+        "pm.test('feature schema declares 18 features', () => { pm.expect(body.feature_names).to.be.an('array'); pm.expect(body.feature_names).to.have.length(18); pm.expect(body.feature_count).to.eql(18); });",
         "pm.test('response under 15 seconds', () => pm.expect(pm.response.responseTime).to.be.below(15000));"
       ] } }],
       "request": { "method": "GET", "header": [{ "key": "Accept", "value": "application/json" }], "url": "{{mlBaseUrl}}/features" }
